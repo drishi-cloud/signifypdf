@@ -17,3 +17,4 @@ backend/uploads/
 
 # VS Code optional
 .vscode/
+backend/*.db
