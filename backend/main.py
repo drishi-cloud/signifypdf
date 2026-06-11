@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import Base, engine
 from models.user import User
-from routers import auth
+from models.document import Document
+from routers import auth, documents
 
 Base.metadata.create_all(bind=engine)
 
@@ -13,7 +14,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Frontend URLs allowed to talk to backend
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -30,6 +30,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(documents.router)
 
 
 @app.get("/")
