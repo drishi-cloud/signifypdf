@@ -3,6 +3,7 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -97,3 +98,55 @@ def get_my_documents(
     ).order_by(Document.created_at.desc()).all()
 
     return documents
+
+@router.get(
+    "/{document_id}",
+    response_model=DocumentResponse
+)
+def get_single_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.owner_id == current_user.id
+    ).first()
+
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    return document
+
+
+@router.get("/{document_id}/file")
+def get_document_file(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.owner_id == current_user.id
+    ).first()
+
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    if not os.path.exists(document.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="PDF file not found"
+        )
+
+    return FileResponse(
+        path=document.file_path,
+        media_type="application/pdf",
+        filename=document.original_filename
+    )

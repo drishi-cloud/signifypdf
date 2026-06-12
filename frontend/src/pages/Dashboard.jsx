@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 
 function Dashboard() {
   const navigate = useNavigate()
@@ -242,9 +242,18 @@ function Dashboard() {
                     </p>
                   </div>
 
+                  <div className="flex items-center gap-3">
                   <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-sm">
                     Uploaded
                   </span>
+
+                  <Link
+                  to={`/documents/${document.id}`}
+                 className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700"
+                  >
+                     View
+                  </Link>
+                  </div>
                 </div>
               ))}
             </div>
