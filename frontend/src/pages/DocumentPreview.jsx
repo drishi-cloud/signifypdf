@@ -16,10 +16,12 @@ function DocumentPreview() {
 
   const [documentDetails, setDocumentDetails] = useState(null)
   const [pdfUrl, setPdfUrl] = useState("")
+  const [savedSignatures, setSavedSignatures] = useState([])
   const [numPages, setNumPages] = useState(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [message, setMessage] = useState("")
   const [isLoading, setIsLoading] = useState(true)
+  const [isSavingSignature, setIsSavingSignature] = useState(false)
 
   useEffect(() => {
     async function loadDocumentPreview() {
@@ -47,6 +49,19 @@ function DocumentPreview() {
         }
 
         setDocumentDetails(detailsData)
+
+        const signaturesResponse = await fetch(`http://127.0.0.1:8000/api/signatures/${id}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        })
+
+        const signaturesData = await signaturesResponse.json()
+
+        if (signaturesResponse.ok) {
+          setSavedSignatures(signaturesData)
+        }
 
         const fileResponse = await fetch(`http://127.0.0.1:8000/api/docs/${id}/file`, {
           method: "GET",
@@ -94,6 +109,56 @@ function DocumentPreview() {
     setPageNumber((prevPage) => Math.min(prevPage + 1, numPages))
   }
 
+  async function addSignaturePlaceholder() {
+    const token = localStorage.getItem("token")
+
+    if (!token) {
+      navigate("/login")
+      return
+    }
+
+    setIsSavingSignature(true)
+    setMessage("")
+
+    const signatureData = {
+      document_id: Number(id),
+      page_number: pageNumber,
+      x_position: 0.45,
+      y_position: 0.72,
+      width: 0.25,
+      height: 0.08
+    }
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/signatures", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(signatureData)
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setMessage(data.detail || "Could not save signature placeholder")
+        setIsSavingSignature(false)
+        return
+      }
+
+      setSavedSignatures((prevSignatures) => {
+        return [data, ...prevSignatures]
+      })
+
+      setMessage("Signature placeholder saved successfully")
+    } catch (error) {
+      setMessage("Backend is not running or something went wrong")
+    } finally {
+      setIsSavingSignature(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <main className="min-h-screen bg-slate-100 flex items-center justify-center">
@@ -121,7 +186,7 @@ function DocumentPreview() {
 
       <section className="max-w-6xl mx-auto px-6 py-8">
         {message && (
-          <div className="bg-white rounded-2xl shadow-lg p-6">
+          <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
             <p className="text-slate-700">
               {message}
             </p>
@@ -139,8 +204,49 @@ function DocumentPreview() {
               <p>Verification ID: {documentDetails.verification_id}</p>
               <p>Size: {(documentDetails.file_size / 1024).toFixed(2)} KB</p>
             </div>
+
+            <button
+              onClick={addSignaturePlaceholder}
+              disabled={isSavingSignature}
+              className="mt-5 bg-slate-800 text-white px-5 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-60"
+            >
+              {isSavingSignature ? "Saving..." : "Add Signature Placeholder"}
+            </button>
           </div>
         )}
+
+        <div className="mt-6 bg-white rounded-2xl shadow-lg p-6">
+          <h3 className="text-xl font-bold text-slate-800">
+            Saved Signature Positions
+          </h3>
+
+          {savedSignatures.length === 0 ? (
+            <p className="mt-3 text-slate-600">
+              No signature positions saved yet.
+            </p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {savedSignatures.map((signature) => (
+                <div
+                  key={signature.id}
+                  className="border border-slate-200 rounded-xl p-4 text-sm text-slate-700"
+                >
+                  <p className="font-semibold">
+                    Signature #{signature.id}
+                  </p>
+                  <p>Page: {signature.page_number}</p>
+                  <p>
+                    Position: x = {signature.x_position}, y = {signature.y_position}
+                  </p>
+                  <p>
+                    Size: width = {signature.width}, height = {signature.height}
+                  </p>
+                  <p>Status: {signature.status}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {pdfUrl && (
           <div className="mt-6 bg-white rounded-2xl shadow-lg p-6">

@@ -1,0 +1,29 @@
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+
+class SignatureCreate(BaseModel):
+    document_id: int
+    page_number: int = Field(ge=1)
+
+    x_position: float = Field(ge=0, le=1)
+    y_position: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
+
+
+class SignatureResponse(BaseModel):
+    id: int
+    document_id: int
+    user_id: int
+    page_number: int
+    x_position: float
+    y_position: float
+    width: float
+    height: float
+    status: str
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }

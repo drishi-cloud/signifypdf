@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import Base, engine
 from models.user import User
 from models.document import Document
-from routers import auth, documents
-
+from models.signature import Signature
+from routers import auth, documents, signatures
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(documents.router)
+app.include_router(signatures.router)
 
 
 @app.get("/")
