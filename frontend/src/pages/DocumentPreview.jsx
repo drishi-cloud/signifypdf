@@ -34,8 +34,14 @@ function DocumentPreview() {
   const [savedSignatures, setSavedSignatures] = useState([])
   const [signatureContents, setSignatureContents] = useState({})
 
+  const [signatureMode, setSignatureMode] = useState("typed")
   const [signatureText, setSignatureText] = useState("")
+  const [typedSignatureFont, setTypedSignatureFont] = useState("Georgia, serif")
+  const [typedSignatureColor, setTypedSignatureColor] = useState("#0f172a")
+
   const [drawnSignature, setDrawnSignature] = useState("")
+  const [drawPenColor, setDrawPenColor] = useState("#0f172a")
+
   const [uploadedSignature, setUploadedSignature] = useState("")
 
   const [numPages, setNumPages] = useState(null)
@@ -53,11 +59,27 @@ function DocumentPreview() {
     setHasLoadedSignatureStorage(false)
 
     const savedTypedSignature = safeGetStorage("signifypdf_typed_signature")
+    const savedTypedFont = safeGetStorage("signifypdf_typed_signature_font")
+    const savedTypedColor = safeGetStorage("signifypdf_typed_signature_color")
+    const savedDrawPenColor = safeGetStorage("signifypdf_draw_pen_color")
+
     const savedDrawnSignature = safeGetStorage("signifypdf_drawn_signature")
     const savedUploadedSignature = safeGetStorage("signifypdf_uploaded_signature")
 
     if (savedTypedSignature) {
       setSignatureText(savedTypedSignature)
+    }
+
+    if (savedTypedFont) {
+      setTypedSignatureFont(savedTypedFont)
+    }
+
+    if (savedTypedColor) {
+      setTypedSignatureColor(savedTypedColor)
+    }
+
+    if (savedDrawPenColor) {
+      setDrawPenColor(savedDrawPenColor)
     }
 
     if (savedDrawnSignature && savedDrawnSignature.length < MAX_IMAGE_DATA_LENGTH) {
@@ -103,6 +125,30 @@ function DocumentPreview() {
 
     safeSetStorage("signifypdf_typed_signature", signatureText)
   }, [signatureText, hasLoadedSignatureStorage])
+
+  useEffect(() => {
+    if (!hasLoadedSignatureStorage) {
+      return
+    }
+
+    safeSetStorage("signifypdf_typed_signature_font", typedSignatureFont)
+  }, [typedSignatureFont, hasLoadedSignatureStorage])
+
+  useEffect(() => {
+    if (!hasLoadedSignatureStorage) {
+      return
+    }
+
+    safeSetStorage("signifypdf_typed_signature_color", typedSignatureColor)
+  }, [typedSignatureColor, hasLoadedSignatureStorage])
+
+  useEffect(() => {
+    if (!hasLoadedSignatureStorage) {
+      return
+    }
+
+    safeSetStorage("signifypdf_draw_pen_color", drawPenColor)
+  }, [drawPenColor, hasLoadedSignatureStorage])
 
   useEffect(() => {
     if (!hasLoadedSignatureStorage) {
@@ -447,11 +493,45 @@ function DocumentPreview() {
     return cleanText
   }
 
+  function isLightColor(hexColor) {
+    if (!hexColor || !hexColor.startsWith("#") || hexColor.length !== 7) {
+      return false
+    }
+
+    const hex = hexColor.replace("#", "")
+
+    const red = parseInt(hex.substring(0, 2), 16)
+    const green = parseInt(hex.substring(2, 4), 16)
+    const blue = parseInt(hex.substring(4, 6), 16)
+
+    const brightness = red * 0.299 + green * 0.587 + blue * 0.114
+
+    return brightness > 180
+  }
+
+  function getPreviewBackgroundColor(content) {
+    if (content && content.previewBackground) {
+      return content.previewBackground
+    }
+
+    if (content && content.type === "text") {
+      const textColor = content.color || "#0f172a"
+
+      if (isLightColor(textColor)) {
+        return "#1e293b"
+      }
+    }
+
+    return "#f8fafc"
+  }
+
   function getTypedSignatureContent() {
     return {
       type: "text",
       source: "typed",
-      value: getCleanSignatureText()
+      value: getCleanSignatureText(),
+      font: typedSignatureFont,
+      color: typedSignatureColor
     }
   }
 
@@ -459,7 +539,8 @@ function DocumentPreview() {
     return {
       type: "image",
       source: "drawn",
-      value: drawnSignature
+      value: drawnSignature,
+      previewBackground: isLightColor(drawPenColor) ? "#1e293b" : "#f8fafc"
     }
   }
 
@@ -467,7 +548,8 @@ function DocumentPreview() {
     return {
       type: "image",
       source: "uploaded",
-      value: uploadedSignature
+      value: uploadedSignature,
+      previewBackground: "#f8fafc"
     }
   }
 
@@ -508,7 +590,9 @@ function DocumentPreview() {
     const existingContent = signatureContents[signature.id] || {
       type: "text",
       source: "typed",
-      value: "Signature"
+      value: "Signature",
+      font: "Georgia, serif",
+      color: "#0f172a"
     }
 
     setDragItem({
@@ -550,7 +634,7 @@ function DocumentPreview() {
     context.lineWidth = 3
     context.lineCap = "round"
     context.lineJoin = "round"
-    context.strokeStyle = "#0f172a"
+    context.strokeStyle = drawPenColor
 
     context.beginPath()
     context.moveTo(point.x, point.y)
@@ -569,6 +653,7 @@ function DocumentPreview() {
     const context = canvas.getContext("2d")
     const point = getCanvasPoint(event)
 
+    context.strokeStyle = drawPenColor
     context.lineTo(point.x, point.y)
     context.stroke()
   }
@@ -833,7 +918,13 @@ function DocumentPreview() {
   function renderSignatureContent(content) {
     if (!content) {
       return (
-        <span className="font-serif italic text-lg">
+        <span
+          className="italic text-lg"
+          style={{
+            fontFamily: "Georgia, serif",
+            color: "#0f172a"
+          }}
+        >
           Signature
         </span>
       )
@@ -841,7 +932,13 @@ function DocumentPreview() {
 
     if (typeof content === "string") {
       return (
-        <span className="font-serif italic text-lg">
+        <span
+          className="italic text-lg"
+          style={{
+            fontFamily: "Georgia, serif",
+            color: "#0f172a"
+          }}
+        >
           {content}
         </span>
       )
@@ -859,10 +956,24 @@ function DocumentPreview() {
     }
 
     return (
-      <span className="font-serif italic text-lg">
+      <span
+        className="italic text-lg"
+        style={{
+          fontFamily: content.font || "Georgia, serif",
+          color: content.color || "#0f172a"
+        }}
+      >
         {content.value || "Signature"}
       </span>
     )
+  }
+
+  function getModeButtonClass(mode) {
+    if (signatureMode === mode) {
+      return "bg-slate-800 text-white"
+    }
+
+    return "bg-slate-100 text-slate-700 hover:bg-slate-200"
   }
 
   const typedContent = getTypedSignatureContent()
@@ -887,11 +998,12 @@ function DocumentPreview() {
     <main className="min-h-screen bg-slate-100">
       {dragPreview && (
         <div
-          className="fixed z-50 bg-white shadow-lg px-8 py-4 rounded-lg pointer-events-none text-slate-800 min-w-36 min-h-14 flex items-center justify-center"
+          className="fixed z-50 pointer-events-none text-slate-800 min-w-36 min-h-14 flex items-center justify-center rounded-md border border-dashed border-slate-400 p-2 shadow-lg"
           style={{
             left: dragPreview.x,
             top: dragPreview.y,
-            transform: "translate(-50%, -50%)"
+            transform: "translate(-50%, -50%)",
+            backgroundColor: getPreviewBackgroundColor(dragPreview.content)
           }}
         >
           {renderSignatureContent(dragPreview.content)}
@@ -934,127 +1046,219 @@ function DocumentPreview() {
           </div>
         )}
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[320px_1fr]">
-          <aside className="bg-white rounded-2xl shadow-lg p-6 h-fit">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[340px_1fr]">
+          <aside className="bg-white rounded-2xl shadow-lg p-6 h-fit lg:sticky lg:top-6">
             <h3 className="text-xl font-bold text-slate-800">
               Signature Tools
             </h3>
 
             <p className="mt-2 text-sm text-slate-500">
-              Drag a signature preview and drop it on the PDF.
+              Choose one option and drag the preview onto the PDF.
             </p>
 
-            <label className="mt-5 block text-sm font-medium text-slate-700">
-              Type your signature
-            </label>
-
-            <input
-              type="text"
-              value={signatureText}
-              onChange={handleSignatureTextChange}
-              placeholder="Enter your name"
-              className="mt-2 w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-700"
-            />
-
-            <div
-              onMouseDown={(event) => startNewSignatureDrag(event, typedContent)}
-              className="mt-3 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-4 text-center cursor-grab active:cursor-grabbing select-none hover:bg-slate-100"
-            >
-              <p className="font-serif italic text-2xl text-slate-800">
-                {getCleanSignatureText()}
-              </p>
-
-              <p className="mt-2 text-xs text-slate-500">
-                Drag typed signature to PDF
-              </p>
-            </div>
-
-            <div className="mt-6 border-t border-slate-200 pt-5">
-              <p className="text-sm font-medium text-slate-700">
-                Draw your signature
-              </p>
-
-              <canvas
-                ref={signatureCanvasRef}
-                width={260}
-                height={80}
-                onMouseDown={startDrawing}
-                onMouseMove={drawSignature}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
-                className="mt-2 w-full h-20 border border-slate-300 rounded-lg bg-white cursor-crosshair"
-              />
-
-              <div className="mt-3 flex gap-3">
-                <button
-                  onClick={clearDrawnSignature}
-                  className="flex-1 border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50"
-                >
-                  Clear
-                </button>
-              </div>
-
-              <div
-                onMouseDown={(event) => startNewSignatureDrag(event, drawnContent)}
-                className="mt-3 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-3 h-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:bg-slate-100"
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              <button
+                onClick={() => setSignatureMode("typed")}
+                className={`px-3 py-2 rounded-lg text-sm font-medium ${getModeButtonClass("typed")}`}
               >
-                {drawnSignature ? (
-                  <img
-                    src={drawnSignature}
-                    alt="Drawn signature preview"
-                    draggable={false}
-                    className="max-w-full max-h-full object-contain"
-                  />
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    Draw first, then drag this preview
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6 border-t border-slate-200 pt-5">
-              <p className="text-sm font-medium text-slate-700">
-                Upload signature image
-              </p>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png, image/jpeg, image/jpg"
-                onChange={handleSignatureImageUpload}
-                className="mt-2 block w-full text-sm text-slate-700 border border-slate-300 rounded-lg cursor-pointer bg-white focus:outline-none"
-              />
-
-              <p className="mt-2 text-xs text-slate-500">
-                Supported: PNG, JPG, JPEG. Minimum size: 1 KB. Maximum size: 2 MB.
-              </p>
-
-              <div
-                onMouseDown={(event) => startNewSignatureDrag(event, uploadedContent)}
-                className="mt-3 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-3 h-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:bg-slate-100"
-              >
-                {uploadedSignature ? (
-                  <img
-                    src={uploadedSignature}
-                    alt="Uploaded signature preview"
-                    draggable={false}
-                    className="max-w-full max-h-full object-contain"
-                  />
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    Upload image, then drag this preview
-                  </p>
-                )}
-              </div>
+                Type
+              </button>
 
               <button
-                onClick={clearUploadedSignature}
-                className="mt-3 w-full border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50"
+                onClick={() => setSignatureMode("draw")}
+                className={`px-3 py-2 rounded-lg text-sm font-medium ${getModeButtonClass("draw")}`}
               >
-                Clear Uploaded
+                Draw
+              </button>
+
+              <button
+                onClick={() => setSignatureMode("upload")}
+                className={`px-3 py-2 rounded-lg text-sm font-medium ${getModeButtonClass("upload")}`}
+              >
+                Upload
               </button>
             </div>
+
+            {signatureMode === "typed" && (
+              <div className="mt-5">
+                <label className="block text-sm font-medium text-slate-700">
+                  Type your signature
+                </label>
+
+                <input
+                  type="text"
+                  value={signatureText}
+                  onChange={handleSignatureTextChange}
+                  placeholder="Enter your name"
+                  className="mt-2 w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-700"
+                />
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600">
+                      Font
+                    </label>
+
+                    <select
+                      value={typedSignatureFont}
+                      onChange={(event) => setTypedSignatureFont(event.target.value)}
+                      className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                    >
+                      <option value="Georgia, serif">Georgia</option>
+                      <option value="'Times New Roman', serif">Times New Roman</option>
+                      <option value="'Brush Script MT', cursive">Brush Script</option>
+                      <option value="cursive">Cursive</option>
+                      <option value="monospace">Monospace</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600">
+                      Color
+                    </label>
+
+                    <input
+                      type="color"
+                      value={typedSignatureColor}
+                      onChange={(event) => setTypedSignatureColor(event.target.value)}
+                      className="mt-1 w-full h-10 border border-slate-300 rounded-lg bg-white cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  onMouseDown={(event) => startNewSignatureDrag(event, typedContent)}
+                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-5 text-center cursor-grab active:cursor-grabbing select-none hover:opacity-95"
+                  style={{
+                    backgroundColor: getPreviewBackgroundColor(typedContent)
+                  }}
+                >
+                  <p
+                    className="italic text-2xl"
+                    style={{
+                      fontFamily: typedSignatureFont,
+                      color: typedSignatureColor
+                    }}
+                  >
+                    {getCleanSignatureText()}
+                  </p>
+
+                  <p className="mt-2 text-xs text-slate-500">
+                    Drag typed signature to PDF
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {signatureMode === "draw" && (
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-slate-700">
+                    Draw your signature
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">
+                      Pen
+                    </span>
+
+                    <input
+                      type="color"
+                      value={drawPenColor}
+                      onChange={(event) => setDrawPenColor(event.target.value)}
+                      className="w-9 h-8 border border-slate-300 rounded bg-white cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <canvas
+                  ref={signatureCanvasRef}
+                  width={260}
+                  height={80}
+                  onMouseDown={startDrawing}
+                  onMouseMove={drawSignature}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  className="mt-2 w-full h-20 border border-slate-300 rounded-lg bg-white cursor-crosshair"
+                />
+
+                <button
+                  onClick={clearDrawnSignature}
+                  className="mt-3 w-full border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50"
+                >
+                  Clear Drawing
+                </button>
+
+                <div
+                  onMouseDown={(event) => startNewSignatureDrag(event, drawnContent)}
+                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-3 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:opacity-95"
+                  style={{
+                    backgroundColor: getPreviewBackgroundColor(drawnContent)
+                  }}
+                >
+                  {drawnSignature ? (
+                    <img
+                      src={drawnSignature}
+                      alt="Drawn signature preview"
+                      draggable={false}
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  ) : (
+                    <p className="text-sm text-slate-500 text-center">
+                      Draw first, then drag this preview
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {signatureMode === "upload" && (
+              <div className="mt-5">
+                <p className="text-sm font-medium text-slate-700">
+                  Upload signature image
+                </p>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png, image/jpeg, image/jpg"
+                  onChange={handleSignatureImageUpload}
+                  className="mt-2 block w-full text-sm text-slate-700 border border-slate-300 rounded-lg cursor-pointer bg-white focus:outline-none"
+                />
+
+                <p className="mt-2 text-xs text-slate-500">
+                  Supported: PNG, JPG, JPEG. Minimum size: 1 KB. Maximum size: 2 MB.
+                </p>
+
+                <div
+                  onMouseDown={(event) => startNewSignatureDrag(event, uploadedContent)}
+                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-3 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:opacity-95"
+                  style={{
+                    backgroundColor: getPreviewBackgroundColor(uploadedContent)
+                  }}
+                >
+                  {uploadedSignature ? (
+                    <img
+                      src={uploadedSignature}
+                      alt="Uploaded signature preview"
+                      draggable={false}
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  ) : (
+                    <p className="text-sm text-slate-500 text-center">
+                      Upload image, then drag this preview
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  onClick={clearUploadedSignature}
+                  className="mt-3 w-full border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50"
+                >
+                  Clear Uploaded
+                </button>
+              </div>
+            )}
 
             <div className="mt-6 rounded-xl bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-800">
@@ -1066,11 +1270,7 @@ function DocumentPreview() {
               </p>
 
               <p className="mt-1 text-xs text-slate-500">
-                Drag placed signature to move it.
-              </p>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Hover over placed signature to show × delete button.
+                Hover over placed signature to see border and delete button.
               </p>
             </div>
           </aside>
@@ -1120,7 +1320,7 @@ function DocumentPreview() {
                     <div
                       key={signature.id}
                       onMouseDown={(event) => startExistingSignatureDrag(event, signature)}
-                      className="group absolute z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
+                      className="group absolute z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none rounded-md border border-transparent hover:border-slate-500 hover:border-dashed active:border-slate-800 active:border-solid transition-all"
                       style={{
                         left: `${signature.x_position * 100}%`,
                         top: `${signature.y_position * 100}%`,
