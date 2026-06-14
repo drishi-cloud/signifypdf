@@ -49,6 +49,7 @@ function DocumentPreview() {
   const [message, setMessage] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isSavingSignature, setIsSavingSignature] = useState(false)
+  const [isFinalizing, setIsFinalizing] = useState(false)
   const [isDrawing, setIsDrawing] = useState(false)
 
   const [dragItem, setDragItem] = useState(null)
@@ -915,6 +916,112 @@ function DocumentPreview() {
     }
   }
 
+  async function finalizeSignedPdf() {
+    const token = localStorage.getItem("token")
+
+    if (!token) {
+      navigate("/login")
+      return
+    }
+
+    if (savedSignatures.length === 0) {
+      setMessage("Please place at least one signature before generating signed PDF.")
+      return
+    }
+
+    const finalSignatures = savedSignatures
+      .map((signature) => {
+        const content = signatureContents[signature.id]
+
+        if (!content) {
+          return null
+        }
+
+        return {
+          signature_id: signature.id,
+          type: content.type || "text",
+          value: content.value || "Signature",
+          font: content.font || "Georgia, serif",
+          color: content.color || "#0f172a"
+        }
+      })
+      .filter(Boolean)
+
+    if (finalSignatures.length === 0) {
+      setMessage("Signature content not found. Please add the signature again.")
+      return
+    }
+
+    setIsFinalizing(true)
+    setMessage("Generating signed PDF...")
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/signatures/finalize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          document_id: Number(id),
+          signatures: finalSignatures
+        })
+      })
+
+      if (!response.ok) {
+        let errorMessage = "Could not generate signed PDF"
+
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.detail || errorMessage
+        } catch (error) {
+          errorMessage = "Could not generate signed PDF"
+        }
+
+        setMessage(errorMessage)
+        return
+      }
+
+      const signedPdfBlob = await response.blob()
+      const downloadUrl = URL.createObjectURL(signedPdfBlob)
+
+      const downloadLink = window.document.createElement("a")
+      downloadLink.href = downloadUrl
+      downloadLink.download = `signed-${documentDetails?.original_filename || "document.pdf"}`
+      window.document.body.appendChild(downloadLink)
+      downloadLink.click()
+      downloadLink.remove()
+
+      URL.revokeObjectURL(downloadUrl)
+
+      setDocumentDetails((prevDetails) => {
+        if (!prevDetails) {
+          return prevDetails
+        }
+
+        return {
+          ...prevDetails,
+          status: "signed"
+        }
+      })
+
+      setSavedSignatures((prevSignatures) => {
+        return prevSignatures.map((signature) => {
+          return {
+            ...signature,
+            status: "signed"
+          }
+        })
+      })
+
+      setMessage("Signed PDF generated successfully")
+    } catch (error) {
+      setMessage("Backend is not running or something went wrong")
+    } finally {
+      setIsFinalizing(false)
+    }
+  }
+
   function renderSignatureContent(content) {
     if (!content) {
       return (
@@ -1143,7 +1250,7 @@ function DocumentPreview() {
                     {getCleanSignatureText()}
                   </p>
 
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-slate-300">
                     Drag typed signature to PDF
                   </p>
                 </div>
@@ -1273,6 +1380,14 @@ function DocumentPreview() {
                 Hover over placed signature to see border and delete button.
               </p>
             </div>
+
+            <button
+              onClick={finalizeSignedPdf}
+              disabled={savedSignatures.length === 0 || isFinalizing}
+              className="mt-4 w-full bg-green-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {isFinalizing ? "Generating..." : "Generate Signed PDF"}
+            </button>
           </aside>
 
           {pdfUrl && (
