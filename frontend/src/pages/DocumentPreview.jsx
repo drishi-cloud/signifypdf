@@ -16,19 +16,83 @@ const SIGNATURE_HEIGHT = 0.08
 function DocumentPreview() {
   const { id } = useParams()
   const navigate = useNavigate()
+
   const pdfAreaRef = useRef(null)
+  const signatureCanvasRef = useRef(null)
 
   const [documentDetails, setDocumentDetails] = useState(null)
   const [pdfUrl, setPdfUrl] = useState("")
   const [savedSignatures, setSavedSignatures] = useState([])
+  const [signatureContents, setSignatureContents] = useState({})
+  const [signatureText, setSignatureText] = useState("")
+  const [drawnSignature, setDrawnSignature] = useState("")
+
   const [numPages, setNumPages] = useState(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [message, setMessage] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isSavingSignature, setIsSavingSignature] = useState(false)
+  const [isDrawing, setIsDrawing] = useState(false)
 
   const [dragItem, setDragItem] = useState(null)
   const [dragPreview, setDragPreview] = useState(null)
+
+  useEffect(() => {
+    const savedTypedSignature = localStorage.getItem("signifypdf_typed_signature")
+
+    if (savedTypedSignature) {
+      setSignatureText(savedTypedSignature)
+    }
+
+    const savedDrawnSignature = localStorage.getItem("signifypdf_drawn_signature")
+
+    if (savedDrawnSignature) {
+      setDrawnSignature(savedDrawnSignature)
+    }
+
+    const savedContents = localStorage.getItem(`signifypdf_signature_texts_${id}`)
+
+    if (savedContents) {
+      setSignatureContents(JSON.parse(savedContents))
+    }
+  }, [id])
+
+  useEffect(() => {
+    localStorage.setItem("signifypdf_typed_signature", signatureText)
+  }, [signatureText])
+
+  useEffect(() => {
+    if (drawnSignature) {
+      localStorage.setItem("signifypdf_drawn_signature", drawnSignature)
+    } else {
+      localStorage.removeItem("signifypdf_drawn_signature")
+    }
+  }, [drawnSignature])
+
+  useEffect(() => {
+    localStorage.setItem(
+      `signifypdf_signature_texts_${id}`,
+      JSON.stringify(signatureContents)
+    )
+  }, [signatureContents, id])
+
+  useEffect(() => {
+    const canvas = signatureCanvasRef.current
+
+    if (!canvas || !drawnSignature) {
+      return
+    }
+
+    const context = canvas.getContext("2d")
+    const image = new Image()
+
+    image.onload = () => {
+      context.clearRect(0, 0, canvas.width, canvas.height)
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    }
+
+    image.src = drawnSignature
+  }, [drawnSignature])
 
   useEffect(() => {
     let temporaryPdfUrl = ""
@@ -113,7 +177,8 @@ function DocumentPreview() {
     function handleMouseMove(event) {
       setDragPreview({
         x: event.clientX,
-        y: event.clientY
+        y: event.clientY,
+        content: dragItem.content
       })
     }
 
@@ -159,7 +224,7 @@ function DocumentPreview() {
           height: dragItem.height
         }
 
-        await saveSignaturePosition(signatureData)
+        await saveSignaturePosition(signatureData, dragItem.content)
       }
 
       if (dragItem.type === "move") {
@@ -220,18 +285,49 @@ function DocumentPreview() {
     }
   }
 
-  function startNewSignatureDrag(event) {
+  function getCleanSignatureText() {
+    const cleanText = signatureText.trim()
+
+    if (!cleanText) {
+      return "Signature"
+    }
+
+    return cleanText
+  }
+
+  function getTypedSignatureContent() {
+    return {
+      type: "text",
+      value: getCleanSignatureText()
+    }
+  }
+
+  function getDrawnSignatureContent() {
+    return {
+      type: "image",
+      value: drawnSignature
+    }
+  }
+
+  function startNewSignatureDrag(event, signatureContent) {
     event.preventDefault()
+
+    if (signatureContent.type === "image" && !signatureContent.value) {
+      setMessage("Please draw your signature first")
+      return
+    }
 
     setDragItem({
       type: "new",
       width: SIGNATURE_WIDTH,
-      height: SIGNATURE_HEIGHT
+      height: SIGNATURE_HEIGHT,
+      content: signatureContent
     })
 
     setDragPreview({
       x: event.clientX,
-      y: event.clientY
+      y: event.clientY,
+      content: signatureContent
     })
 
     setMessage("Drag and release the signature on the PDF")
@@ -241,22 +337,93 @@ function DocumentPreview() {
     event.preventDefault()
     event.stopPropagation()
 
+    const existingContent = signatureContents[signature.id] || {
+      type: "text",
+      value: "Signature"
+    }
+
     setDragItem({
       type: "move",
       signatureId: signature.id,
       width: signature.width,
-      height: signature.height
+      height: signature.height,
+      content: existingContent
     })
 
     setDragPreview({
       x: event.clientX,
-      y: event.clientY
+      y: event.clientY,
+      content: existingContent
     })
 
     setMessage("Move the signature and release it on the PDF")
   }
 
-  async function saveSignaturePosition(signatureData) {
+  function getCanvasPoint(event) {
+    const canvas = signatureCanvasRef.current
+    const rect = canvas.getBoundingClientRect()
+
+    return {
+      x: (event.clientX - rect.left) * (canvas.width / rect.width),
+      y: (event.clientY - rect.top) * (canvas.height / rect.height)
+    }
+  }
+
+  function startDrawing(event) {
+    event.preventDefault()
+
+    const canvas = signatureCanvasRef.current
+    const context = canvas.getContext("2d")
+    const point = getCanvasPoint(event)
+
+    context.lineWidth = 3
+    context.lineCap = "round"
+    context.lineJoin = "round"
+    context.strokeStyle = "#0f172a"
+
+    context.beginPath()
+    context.moveTo(point.x, point.y)
+
+    setIsDrawing(true)
+  }
+
+  function drawSignature(event) {
+    if (!isDrawing) {
+      return
+    }
+
+    event.preventDefault()
+
+    const canvas = signatureCanvasRef.current
+    const context = canvas.getContext("2d")
+    const point = getCanvasPoint(event)
+
+    context.lineTo(point.x, point.y)
+    context.stroke()
+  }
+
+  function stopDrawing() {
+    if (!isDrawing) {
+      return
+    }
+
+    const canvas = signatureCanvasRef.current
+    const dataUrl = canvas.toDataURL("image/png")
+
+    setDrawnSignature(dataUrl)
+    setIsDrawing(false)
+  }
+
+  function clearDrawnSignature() {
+    const canvas = signatureCanvasRef.current
+    const context = canvas.getContext("2d")
+
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    setDrawnSignature("")
+    setMessage("Drawn signature cleared")
+  }
+
+  async function saveSignaturePosition(signatureData, contentToSave) {
     const token = localStorage.getItem("token")
 
     if (!token) {
@@ -285,6 +452,13 @@ function DocumentPreview() {
 
       setSavedSignatures((prevSignatures) => {
         return [data, ...prevSignatures]
+      })
+
+      setSignatureContents((prevContents) => {
+        return {
+          ...prevContents,
+          [data.id]: contentToSave || getTypedSignatureContent()
+        }
       })
 
       setMessage("Signature placed successfully")
@@ -367,13 +541,19 @@ function DocumentPreview() {
         return prevSignatures.filter((signature) => signature.id !== signatureId)
       })
 
+      setSignatureContents((prevContents) => {
+        const updatedContents = { ...prevContents }
+        delete updatedContents[signatureId]
+        return updatedContents
+      })
+
       setMessage("Signature removed successfully")
     } catch (error) {
       setMessage("Backend is not running or something went wrong")
     }
   }
 
-  function addDefaultSignatureBox() {
+  function addTypedDefaultSignatureBox() {
     const signatureData = {
       document_id: Number(id),
       page_number: pageNumber,
@@ -383,7 +563,59 @@ function DocumentPreview() {
       height: SIGNATURE_HEIGHT
     }
 
-    saveSignaturePosition(signatureData)
+    saveSignaturePosition(signatureData, getTypedSignatureContent())
+  }
+
+  function addDrawnDefaultSignatureBox() {
+    if (!drawnSignature) {
+      setMessage("Please draw your signature first")
+      return
+    }
+
+    const signatureData = {
+      document_id: Number(id),
+      page_number: pageNumber,
+      x_position: 0.45,
+      y_position: 0.72,
+      width: SIGNATURE_WIDTH,
+      height: SIGNATURE_HEIGHT
+    }
+
+    saveSignaturePosition(signatureData, getDrawnSignatureContent())
+  }
+
+  function renderSignatureContent(content) {
+    if (!content) {
+      return (
+        <span className="font-serif italic text-lg">
+          Signature
+        </span>
+      )
+    }
+
+    if (typeof content === "string") {
+      return (
+        <span className="font-serif italic text-lg">
+          {content}
+        </span>
+      )
+    }
+
+    if (content.type === "image" && content.value) {
+      return (
+        <img
+          src={content.value}
+          alt="Drawn signature"
+          className="max-w-full max-h-full object-contain"
+        />
+      )
+    }
+
+    return (
+      <span className="font-serif italic text-lg">
+        {content.value || "Signature"}
+      </span>
+    )
   }
 
   const currentPageSignatures = savedSignatures.filter((signature) => {
@@ -404,14 +636,14 @@ function DocumentPreview() {
     <main className="min-h-screen bg-slate-100">
       {dragPreview && (
         <div
-          className="fixed z-50 border-2 border-dashed border-slate-900 bg-white shadow-lg px-8 py-4 rounded-lg pointer-events-none font-bold text-slate-800"
+          className="fixed z-50 border-2 border-dashed border-slate-900 bg-white shadow-lg px-8 py-4 rounded-lg pointer-events-none text-slate-800 min-w-36 min-h-14 flex items-center justify-center"
           style={{
             left: dragPreview.x,
             top: dragPreview.y,
             transform: "translate(-50%, -50%)"
           }}
         >
-          Signature
+          {renderSignatureContent(dragPreview.content)}
         </div>
       )}
 
@@ -451,35 +683,103 @@ function DocumentPreview() {
           </div>
         )}
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[300px_1fr]">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[320px_1fr]">
           <aside className="bg-white rounded-2xl shadow-lg p-6 h-fit">
             <h3 className="text-xl font-bold text-slate-800">
               Signature Tools
             </h3>
 
-            <p className="mt-2 text-sm text-slate-600">
-              Hold and drag this signature card onto the PDF.
+            <label className="mt-5 block text-sm font-medium text-slate-700">
+              Type your signature
+            </label>
+
+            <input
+              type="text"
+              value={signatureText}
+              onChange={(event) => setSignatureText(event.target.value)}
+              placeholder="Enter your name"
+              className="mt-2 w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-700"
+            />
+
+            <p className="mt-4 text-sm text-slate-600">
+              Typed Signature Preview
             </p>
 
             <div
-              onMouseDown={startNewSignatureDrag}
-              className="mt-5 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-5 text-center cursor-grab active:cursor-grabbing select-none"
+              onMouseDown={(event) => startNewSignatureDrag(event, getTypedSignatureContent())}
+              className="mt-2 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-5 text-center cursor-grab active:cursor-grabbing select-none"
             >
-              <p className="font-bold text-slate-800">
-                Signature
+              <p className="font-serif italic text-2xl text-slate-800">
+                {getCleanSignatureText()}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Drag me onto PDF
+
+              <p className="mt-2 text-xs text-slate-500">
+                Drag typed signature onto PDF
               </p>
             </div>
 
             <button
-              onClick={addDefaultSignatureBox}
+              onClick={addTypedDefaultSignatureBox}
               disabled={isSavingSignature}
-              className="mt-5 w-full bg-slate-800 text-white px-5 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-60"
+              className="mt-4 w-full bg-slate-800 text-white px-5 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-60"
             >
-              {isSavingSignature ? "Saving..." : "Add Default Box"}
+              Add Typed Default Box
             </button>
+
+            <div className="mt-6 border-t border-slate-200 pt-5">
+              <p className="text-sm font-medium text-slate-700">
+                Draw your signature
+              </p>
+
+              <canvas
+                ref={signatureCanvasRef}
+                width={260}
+                height={120}
+                onMouseDown={startDrawing}
+                onMouseMove={drawSignature}
+                onMouseUp={stopDrawing}
+                onMouseLeave={stopDrawing}
+                className="mt-2 w-full h-32 border border-slate-300 rounded-lg bg-white cursor-crosshair"
+              />
+
+              <div className="mt-3 flex gap-3">
+                <button
+                  onClick={clearDrawnSignature}
+                  className="flex-1 border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50"
+                >
+                  Clear
+                </button>
+
+                <button
+                  onClick={addDrawnDefaultSignatureBox}
+                  disabled={!drawnSignature || isSavingSignature}
+                  className="flex-1 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-60"
+                >
+                  Add Drawn
+                </button>
+              </div>
+
+              <p className="mt-4 text-sm text-slate-600">
+                Drawn Signature Preview
+              </p>
+
+              <div
+                onMouseDown={(event) => startNewSignatureDrag(event, getDrawnSignatureContent())}
+                className="mt-2 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-4 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
+              >
+                {drawnSignature ? (
+                  <img
+                    src={drawnSignature}
+                    alt="Drawn signature preview"
+                    className="max-w-full max-h-full object-contain"
+                  />
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    Draw first, then drag
+                  </p>
+                )}
+              </div>
+            </div>
 
             <div className="mt-6 rounded-xl bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-800">
@@ -549,9 +849,7 @@ function DocumentPreview() {
                         height: `${signature.height * 100}%`
                       }}
                     >
-                      <span>
-                        Signature #{signature.id}
-                      </span>
+                      {renderSignatureContent(signatureContents[signature.id])}
 
                       <button
                         onMouseDown={(event) => {
@@ -571,7 +869,7 @@ function DocumentPreview() {
               </div>
 
               <p className="mt-4 text-sm text-slate-600">
-                Hold the signature card, move it over the PDF, and release. Existing signature boxes can also be moved.
+                Type or draw your signature, drag it onto the PDF, and move it wherever needed.
               </p>
             </div>
           )}
