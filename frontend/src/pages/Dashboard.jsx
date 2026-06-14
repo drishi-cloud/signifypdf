@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
+const API_BASE_URL = "http://127.0.0.1:8000"
+
+const MIN_PDF_FILE_SIZE = 1024
+const MAX_PDF_FILE_SIZE = 10 * 1024 * 1024
+
 function Dashboard() {
   const navigate = useNavigate()
 
@@ -10,7 +15,6 @@ function Dashboard() {
   const [message, setMessage] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
-  const [deletingDocumentId, setDeletingDocumentId] = useState(null)
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -22,7 +26,7 @@ function Dashboard() {
       }
 
       try {
-        const userResponse = await fetch("http://127.0.0.1:8000/api/auth/me", {
+        const userResponse = await fetch(`${API_BASE_URL}/api/auth/me`, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`
@@ -39,20 +43,20 @@ function Dashboard() {
 
         setUser(userData)
 
-        const docsResponse = await fetch("http://127.0.0.1:8000/api/docs", {
+        const documentsResponse = await fetch(`${API_BASE_URL}/api/docs`, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`
           }
         })
 
-        const docsData = await docsResponse.json()
+        const documentsData = await documentsResponse.json()
 
-        if (docsResponse.ok) {
-          setDocuments(docsData)
+        if (documentsResponse.ok) {
+          setDocuments(documentsData)
         }
       } catch (error) {
-        setMessage("Could not connect to backend")
+        setMessage("Backend is not running or something went wrong")
       } finally {
         setIsLoading(false)
       }
@@ -61,23 +65,47 @@ function Dashboard() {
     loadDashboardData()
   }, [navigate])
 
+  function validatePdfFile(file) {
+    if (!file) {
+      return "Please select a PDF file"
+    }
+
+    const isPdfByType = file.type === "application/pdf"
+    const isPdfByName = file.name.toLowerCase().endsWith(".pdf")
+
+    if (!isPdfByType && !isPdfByName) {
+      return "Only PDF files are supported."
+    }
+
+    if (file.size < MIN_PDF_FILE_SIZE) {
+      return "PDF file is too small. Minimum size is 1 KB."
+    }
+
+    if (file.size > MAX_PDF_FILE_SIZE) {
+      return "PDF file is too large. Maximum size is 10 MB."
+    }
+
+    return ""
+  }
+
   function handleFileChange(event) {
-    setSelectedFile(event.target.files[0])
-    setMessage("")
+    const file = event.target.files[0]
+
+    const validationError = validatePdfFile(file)
+
+    if (validationError) {
+      setSelectedFile(null)
+      setMessage(validationError)
+      event.target.value = ""
+      return
+    }
+
+    setSelectedFile(file)
+    setMessage(`${file.name} selected successfully`)
   }
 
   async function handleUpload(event) {
     event.preventDefault()
-
-    if (!selectedFile) {
-      setMessage("Please select a PDF file first")
-      return
-    }
-
-    if (!selectedFile.name.toLowerCase().endsWith(".pdf")) {
-      setMessage("Only PDF files are allowed")
-      return
-    }
 
     const token = localStorage.getItem("token")
 
@@ -86,26 +114,32 @@ function Dashboard() {
       return
     }
 
-    const uploadData = new FormData()
-    uploadData.append("file", selectedFile)
+    const validationError = validatePdfFile(selectedFile)
+
+    if (validationError) {
+      setMessage(validationError)
+      return
+    }
+
+    const formData = new FormData()
+    formData.append("file", selectedFile)
 
     setIsUploading(true)
-    setMessage("")
+    setMessage("Uploading PDF...")
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/docs/upload", {
+      const response = await fetch(`${API_BASE_URL}/api/docs/upload`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`
         },
-        body: uploadData
+        body: formData
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        setMessage(data.detail || "Upload failed")
-        setIsUploading(false)
+        setMessage(data.detail || "Could not upload document")
         return
       }
 
@@ -115,6 +149,7 @@ function Dashboard() {
 
       setSelectedFile(null)
       setMessage("PDF uploaded successfully")
+      event.target.reset()
     } catch (error) {
       setMessage("Backend is not running or something went wrong")
     } finally {
@@ -124,7 +159,7 @@ function Dashboard() {
 
   async function deleteDocument(documentId) {
     const confirmDelete = window.confirm(
-      "Are you sure you want to delete this PDF? This will also remove its saved signatures."
+      "Are you sure you want to delete this PDF? This action cannot be undone."
     )
 
     if (!confirmDelete) {
@@ -138,11 +173,8 @@ function Dashboard() {
       return
     }
 
-    setDeletingDocumentId(documentId)
-    setMessage("")
-
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/docs/${documentId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/docs/${documentId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`
@@ -160,17 +192,31 @@ function Dashboard() {
         return prevDocuments.filter((document) => document.id !== documentId)
       })
 
-      setMessage("Document deleted successfully")
+      setMessage("PDF deleted successfully")
     } catch (error) {
       setMessage("Backend is not running or something went wrong")
-    } finally {
-      setDeletingDocumentId(null)
     }
   }
 
   function handleLogout() {
     localStorage.removeItem("token")
     navigate("/login")
+  }
+
+  function formatFileSize(sizeInBytes) {
+    if (sizeInBytes < 1024 * 1024) {
+      return `${(sizeInBytes / 1024).toFixed(2)} KB`
+    }
+
+    return `${(sizeInBytes / (1024 * 1024)).toFixed(2)} MB`
+  }
+
+  function formatDate(dateValue) {
+    if (!dateValue) {
+      return "N/A"
+    }
+
+    return new Date(dateValue).toLocaleString()
   }
 
   if (isLoading) {
@@ -190,127 +236,175 @@ function Dashboard() {
           SignifyPDF
         </h1>
 
-        <button
-          onClick={handleLogout}
-          className="bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700"
-        >
-          Logout
-        </button>
+        <div className="flex items-center gap-4">
+          {user && (
+            <p className="text-sm text-slate-600">
+              Welcome, {user.name}
+            </p>
+          )}
+
+          <button
+            onClick={handleLogout}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+          >
+            Logout
+          </button>
+        </div>
       </nav>
 
       <section className="max-w-6xl mx-auto px-6 py-8">
         <div className="bg-white rounded-2xl shadow-lg p-6">
-          <h2 className="text-3xl font-bold text-slate-800">
-            Dashboard
+          <h2 className="text-2xl font-bold text-slate-800">
+            Upload PDF Document
           </h2>
 
-          {user && (
-            <div className="mt-4 text-slate-700">
-              <p>
-                Welcome, <span className="font-semibold">{user.name}</span>
-              </p>
-              <p className="mt-1">
-                Email: {user.email}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-6 bg-white rounded-2xl shadow-lg p-6">
-          <h3 className="text-xl font-bold text-slate-800">
-            Upload PDF
-          </h3>
-
-          <p className="mt-2 text-sm text-slate-600">
-            Choose a PDF document to upload for signing.
+          <p className="mt-2 text-slate-600">
+            Upload a PDF document that you want to sign or verify.
           </p>
 
-          <form onSubmit={handleUpload} className="mt-5 space-y-4">
+          <form onSubmit={handleUpload} className="mt-6">
+            <label className="block text-sm font-medium text-slate-700">
+              Select PDF file
+            </label>
+
             <input
               type="file"
-              accept="application/pdf"
+              accept="application/pdf,.pdf"
               onChange={handleFileChange}
-              className="block w-full text-sm text-slate-700 border border-slate-300 rounded-lg cursor-pointer bg-white focus:outline-none"
+              className="mt-2 block w-full text-sm text-slate-700 border border-slate-300 rounded-lg cursor-pointer bg-white focus:outline-none"
             />
 
-            {selectedFile && (
-              <p className="text-sm text-slate-600">
-                Selected file: {selectedFile.name}
-              </p>
-            )}
+            <p className="mt-2 text-xs text-slate-500">
+              Supported: PDF only. Minimum size: 1 KB. Maximum size: 10 MB.
+            </p>
 
-            {message && (
-              <p className="text-sm text-slate-700">
-                {message}
-              </p>
+            {selectedFile && (
+              <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="text-sm text-slate-700">
+                  Selected file: {selectedFile.name}
+                </p>
+
+                <p className="text-sm text-slate-500 mt-1">
+                  Size: {formatFileSize(selectedFile.size)}
+                </p>
+              </div>
             )}
 
             <button
               type="submit"
-              disabled={isUploading}
-              className="bg-slate-800 text-white px-5 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-60"
+              disabled={!selectedFile || isUploading}
+              className="mt-5 bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isUploading ? "Uploading..." : "Upload PDF"}
             </button>
           </form>
         </div>
 
-        <div className="mt-6 bg-white rounded-2xl shadow-lg p-6">
-          <h3 className="text-xl font-bold text-slate-800">
-            My Documents
-          </h3>
+        {message && (
+          <div className="bg-white rounded-xl shadow p-4 mt-6">
+            <p className="text-slate-700">
+              {message}
+            </p>
+          </div>
+        )}
+
+        <div className="mt-8 bg-white rounded-2xl shadow-lg p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-slate-800">
+              My Documents
+            </h2>
+
+            <p className="text-sm text-slate-500">
+              Total: {documents.length}
+            </p>
+          </div>
 
           {documents.length === 0 ? (
-            <p className="mt-4 text-slate-600">
-              No documents uploaded yet.
-            </p>
+            <div className="mt-6 bg-slate-50 rounded-xl p-6 text-center">
+              <p className="text-slate-600">
+                No documents uploaded yet.
+              </p>
+            </div>
           ) : (
-            <div className="mt-5 space-y-4">
-              {documents.map((document) => (
-                <div
-                  key={document.id}
-                  className="border border-slate-200 rounded-xl p-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <h4 className="font-semibold text-slate-800">
-                      {document.original_filename}
-                    </h4>
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left">
+                    <th className="py-3 px-3 text-sm font-semibold text-slate-700">
+                      File Name
+                    </th>
 
-                    <p className="text-sm text-slate-600">
-                      Status: {document.status}
-                    </p>
+                    <th className="py-3 px-3 text-sm font-semibold text-slate-700">
+                      Size
+                    </th>
 
-                    <p className="text-sm text-slate-600">
-                      Verification ID: {document.verification_id}
-                    </p>
+                    <th className="py-3 px-3 text-sm font-semibold text-slate-700">
+                      Status
+                    </th>
 
-                    <p className="text-sm text-slate-600">
-                      Size: {(document.file_size / 1024).toFixed(2)} KB
-                    </p>
-                  </div>
+                    <th className="py-3 px-3 text-sm font-semibold text-slate-700">
+                      Verification ID
+                    </th>
 
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-sm">
-                      Uploaded
-                    </span>
+                    <th className="py-3 px-3 text-sm font-semibold text-slate-700">
+                      Uploaded At
+                    </th>
 
-                    <Link
-                      to={`/documents/${document.id}`}
-                      className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700"
+                    <th className="py-3 px-3 text-sm font-semibold text-slate-700">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {documents.map((document) => (
+                    <tr
+                      key={document.id}
+                      className="border-b border-slate-100 hover:bg-slate-50"
                     >
-                      View
-                    </Link>
+                      <td className="py-4 px-3 text-sm text-slate-800">
+                        {document.original_filename}
+                      </td>
 
-                    <button
-                      onClick={() => deleteDocument(document.id)}
-                      disabled={deletingDocumentId === document.id}
-                      className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700 disabled:opacity-60"
-                    >
-                      {deletingDocumentId === document.id ? "Deleting..." : "Delete"}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                      <td className="py-4 px-3 text-sm text-slate-600">
+                        {formatFileSize(document.file_size)}
+                      </td>
+
+                      <td className="py-4 px-3 text-sm">
+                        <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-medium">
+                          {document.status}
+                        </span>
+                      </td>
+
+                      <td className="py-4 px-3 text-sm text-slate-600">
+                        {document.verification_id}
+                      </td>
+
+                      <td className="py-4 px-3 text-sm text-slate-600">
+                        {formatDate(document.created_at)}
+                      </td>
+
+                      <td className="py-4 px-3 text-sm">
+                        <div className="flex items-center gap-3">
+                          <Link
+                            to={`/documents/${document.id}`}
+                            className="bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700"
+                          >
+                            View
+                          </Link>
+
+                          <button
+                            onClick={() => deleteDocument(document.id)}
+                            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
