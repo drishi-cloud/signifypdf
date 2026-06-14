@@ -5,7 +5,7 @@ from database import get_db
 from models.document import Document
 from models.signature import Signature
 from models.user import User
-from schemas.signature import SignatureCreate, SignatureResponse
+from schemas.signature import SignatureCreate, SignatureUpdate, SignatureResponse
 from utils.security import get_current_user
 
 
@@ -79,3 +79,73 @@ def get_document_signatures(
     ).order_by(Signature.created_at.desc()).all()
 
     return signatures
+
+
+@router.put(
+    "/{signature_id}",
+    response_model=SignatureResponse
+)
+def update_signature_position(
+    signature_id: int,
+    updated_signature: SignatureUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    signature = db.query(Signature).filter(
+        Signature.id == signature_id,
+        Signature.user_id == current_user.id
+    ).first()
+
+    if signature is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Signature not found"
+        )
+
+    document = db.query(Document).filter(
+        Document.id == signature.document_id,
+        Document.owner_id == current_user.id
+    ).first()
+
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    signature.page_number = updated_signature.page_number
+    signature.x_position = updated_signature.x_position
+    signature.y_position = updated_signature.y_position
+    signature.width = updated_signature.width
+    signature.height = updated_signature.height
+
+    db.commit()
+    db.refresh(signature)
+
+    return signature
+@router.delete(
+    "/{signature_id}",
+    status_code=status.HTTP_200_OK
+)
+def delete_signature(
+    signature_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    signature = db.query(Signature).filter(
+        Signature.id == signature_id,
+        Signature.user_id == current_user.id
+    ).first()
+
+    if signature is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Signature not found"
+        )
+
+    db.delete(signature)
+    db.commit()
+
+    return {
+        "message": "Signature deleted successfully"
+    }

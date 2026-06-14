@@ -11,6 +11,12 @@ class SignatureCreate(BaseModel):
     width: float = Field(gt=0, le=1)
     height: float = Field(gt=0, le=1)
 
+class SignatureUpdate(BaseModel):
+    page_number: int = Field(ge=1)
+    x_position: float = Field(ge=0, le=1)
+    y_position: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
 
 class SignatureResponse(BaseModel):
     id: int

@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from models.signature import Signature
 
 from database import get_db
 from models.document import Document
@@ -150,3 +151,38 @@ def get_document_file(
         media_type="application/pdf",
         filename=document.original_filename
     )
+
+@router.delete(
+    "/{document_id}",
+    status_code=status.HTTP_200_OK
+)
+def delete_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.owner_id == current_user.id
+    ).first()
+
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    db.query(Signature).filter(
+        Signature.document_id == document.id,
+        Signature.user_id == current_user.id
+    ).delete()
+
+    if os.path.exists(document.file_path):
+        os.remove(document.file_path)
+
+    db.delete(document)
+    db.commit()
+
+    return {
+        "message": "Document deleted successfully"
+    }
