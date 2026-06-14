@@ -10,8 +10,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString()
 
+const API_BASE_URL = "http://127.0.0.1:8000"
+
 const SIGNATURE_WIDTH = 0.25
 const SIGNATURE_HEIGHT = 0.08
+
+const MIN_SIGNATURE_IMAGE_SIZE = 1024
+const MAX_SIGNATURE_IMAGE_SIZE = 2 * 1024 * 1024
+
+const MAX_IMAGE_DATA_LENGTH = 900000
+const MAX_SIGNATURE_CONTENTS_LENGTH = 3000000
 
 function DocumentPreview() {
   const { id } = useParams()
@@ -19,13 +27,16 @@ function DocumentPreview() {
 
   const pdfAreaRef = useRef(null)
   const signatureCanvasRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   const [documentDetails, setDocumentDetails] = useState(null)
   const [pdfUrl, setPdfUrl] = useState("")
   const [savedSignatures, setSavedSignatures] = useState([])
   const [signatureContents, setSignatureContents] = useState({})
+
   const [signatureText, setSignatureText] = useState("")
   const [drawnSignature, setDrawnSignature] = useState("")
+  const [uploadedSignature, setUploadedSignature] = useState("")
 
   const [numPages, setNumPages] = useState(null)
   const [pageNumber, setPageNumber] = useState(1)
@@ -36,45 +47,117 @@ function DocumentPreview() {
 
   const [dragItem, setDragItem] = useState(null)
   const [dragPreview, setDragPreview] = useState(null)
+  const [hasLoadedSignatureStorage, setHasLoadedSignatureStorage] = useState(false)
 
   useEffect(() => {
-    const savedTypedSignature = localStorage.getItem("signifypdf_typed_signature")
+    setHasLoadedSignatureStorage(false)
+
+    const savedTypedSignature = safeGetStorage("signifypdf_typed_signature")
+    const savedDrawnSignature = safeGetStorage("signifypdf_drawn_signature")
+    const savedUploadedSignature = safeGetStorage("signifypdf_uploaded_signature")
 
     if (savedTypedSignature) {
       setSignatureText(savedTypedSignature)
     }
 
-    const savedDrawnSignature = localStorage.getItem("signifypdf_drawn_signature")
-
-    if (savedDrawnSignature) {
+    if (savedDrawnSignature && savedDrawnSignature.length < MAX_IMAGE_DATA_LENGTH) {
       setDrawnSignature(savedDrawnSignature)
+    } else if (savedDrawnSignature) {
+      safeRemoveStorage("signifypdf_drawn_signature")
     }
 
-    const savedContents = localStorage.getItem(`signifypdf_signature_texts_${id}`)
-
-    if (savedContents) {
-      setSignatureContents(JSON.parse(savedContents))
+    if (savedUploadedSignature && savedUploadedSignature.length < MAX_IMAGE_DATA_LENGTH) {
+      setUploadedSignature(savedUploadedSignature)
+    } else if (savedUploadedSignature) {
+      safeRemoveStorage("signifypdf_uploaded_signature")
     }
+
+    const newStorageKey = `signifypdf_signature_contents_${id}`
+    const oldStorageKey = `signifypdf_signature_texts_${id}`
+
+    const newStoredContents = parseStoredSignatureContents(
+      safeGetStorage(newStorageKey),
+      newStorageKey
+    )
+
+    const oldStoredContents = parseStoredSignatureContents(
+      safeGetStorage(oldStorageKey),
+      oldStorageKey
+    )
+
+    if (newStoredContents && Object.keys(newStoredContents).length > 0) {
+      setSignatureContents(newStoredContents)
+    } else if (oldStoredContents && Object.keys(oldStoredContents).length > 0) {
+      setSignatureContents(oldStoredContents)
+    } else {
+      setSignatureContents({})
+    }
+
+    setHasLoadedSignatureStorage(true)
   }, [id])
 
   useEffect(() => {
-    localStorage.setItem("signifypdf_typed_signature", signatureText)
-  }, [signatureText])
-
-  useEffect(() => {
-    if (drawnSignature) {
-      localStorage.setItem("signifypdf_drawn_signature", drawnSignature)
-    } else {
-      localStorage.removeItem("signifypdf_drawn_signature")
+    if (!hasLoadedSignatureStorage) {
+      return
     }
-  }, [drawnSignature])
+
+    safeSetStorage("signifypdf_typed_signature", signatureText)
+  }, [signatureText, hasLoadedSignatureStorage])
 
   useEffect(() => {
-    localStorage.setItem(
-      `signifypdf_signature_texts_${id}`,
-      JSON.stringify(signatureContents)
+    if (!hasLoadedSignatureStorage) {
+      return
+    }
+
+    if (drawnSignature) {
+      const isSaved = safeSetStorage("signifypdf_drawn_signature", drawnSignature)
+
+      if (!isSaved) {
+        setMessage("Drawn signature is too large to save. Please draw again.")
+      }
+    } else {
+      safeRemoveStorage("signifypdf_drawn_signature")
+    }
+  }, [drawnSignature, hasLoadedSignatureStorage])
+
+  useEffect(() => {
+    if (!hasLoadedSignatureStorage) {
+      return
+    }
+
+    if (uploadedSignature) {
+      const isSaved = safeSetStorage("signifypdf_uploaded_signature", uploadedSignature)
+
+      if (!isSaved) {
+        setUploadedSignature("")
+        setMessage("Uploaded signature is too large. Please upload a smaller image.")
+      }
+    } else {
+      safeRemoveStorage("signifypdf_uploaded_signature")
+    }
+  }, [uploadedSignature, hasLoadedSignatureStorage])
+
+  useEffect(() => {
+    if (!hasLoadedSignatureStorage) {
+      return
+    }
+
+    const storageValue = JSON.stringify(signatureContents)
+
+    if (storageValue.length > MAX_SIGNATURE_CONTENTS_LENGTH) {
+      setMessage("Signature data is too large. Please use a smaller signature image.")
+      return
+    }
+
+    const isSaved = safeSetStorage(
+      `signifypdf_signature_contents_${id}`,
+      storageValue
     )
-  }, [signatureContents, id])
+
+    if (!isSaved) {
+      setMessage("Could not save signature data. Please use a smaller image.")
+    }
+  }, [signatureContents, id, hasLoadedSignatureStorage])
 
   useEffect(() => {
     const canvas = signatureCanvasRef.current
@@ -106,7 +189,7 @@ function DocumentPreview() {
       }
 
       try {
-        const detailsResponse = await fetch(`http://127.0.0.1:8000/api/docs/${id}`, {
+        const detailsResponse = await fetch(`${API_BASE_URL}/api/docs/${id}`, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`
@@ -123,7 +206,7 @@ function DocumentPreview() {
 
         setDocumentDetails(detailsData)
 
-        const signaturesResponse = await fetch(`http://127.0.0.1:8000/api/signatures/${id}`, {
+        const signaturesResponse = await fetch(`${API_BASE_URL}/api/signatures/${id}`, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`
@@ -136,7 +219,7 @@ function DocumentPreview() {
           setSavedSignatures(signaturesData)
         }
 
-        const fileResponse = await fetch(`http://127.0.0.1:8000/api/docs/${id}/file`, {
+        const fileResponse = await fetch(`${API_BASE_URL}/api/docs/${id}/file`, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`
@@ -186,8 +269,7 @@ function DocumentPreview() {
       const pdfArea = pdfAreaRef.current
 
       if (!pdfArea) {
-        setDragItem(null)
-        setDragPreview(null)
+        stopDragging()
         return
       }
 
@@ -201,8 +283,7 @@ function DocumentPreview() {
 
       if (!isInsidePdf) {
         setMessage("Drop the signature inside the PDF area")
-        setDragItem(null)
-        setDragPreview(null)
+        stopDragging()
         return
       }
 
@@ -211,7 +292,9 @@ function DocumentPreview() {
         event.clientY,
         dragItem.width,
         dragItem.height,
-        pdfBox
+        pdfBox,
+        dragItem.offsetX,
+        dragItem.offsetY
       )
 
       if (dragItem.type === "new") {
@@ -239,8 +322,7 @@ function DocumentPreview() {
         await updateSignaturePosition(dragItem.signatureId, updatedSignatureData)
       }
 
-      setDragItem(null)
-      setDragPreview(null)
+      stopDragging()
     }
 
     window.addEventListener("mousemove", handleMouseMove)
@@ -251,6 +333,60 @@ function DocumentPreview() {
       window.removeEventListener("mouseup", handleMouseUp)
     }
   }, [dragItem, id, pageNumber])
+
+  function safeGetStorage(key) {
+    try {
+      return localStorage.getItem(key)
+    } catch (error) {
+      return null
+    }
+  }
+
+  function safeSetStorage(key, value) {
+    try {
+      localStorage.setItem(key, value)
+      return true
+    } catch (error) {
+      return false
+    }
+  }
+
+  function safeRemoveStorage(key) {
+    try {
+      localStorage.removeItem(key)
+    } catch (error) {
+      return
+    }
+  }
+
+  function parseStoredSignatureContents(rawValue, key) {
+    if (!rawValue) {
+      return null
+    }
+
+    if (rawValue.length > MAX_SIGNATURE_CONTENTS_LENGTH) {
+      safeRemoveStorage(key)
+      return null
+    }
+
+    try {
+      const parsedValue = JSON.parse(rawValue)
+
+      if (parsedValue && typeof parsedValue === "object") {
+        return parsedValue
+      }
+
+      return null
+    } catch (error) {
+      safeRemoveStorage(key)
+      return null
+    }
+  }
+
+  function stopDragging() {
+    setDragItem(null)
+    setDragPreview(null)
+  }
 
   function handleDocumentLoadSuccess({ numPages }) {
     setNumPages(numPages)
@@ -265,17 +401,33 @@ function DocumentPreview() {
     setPageNumber((prevPage) => Math.min(prevPage + 1, numPages))
   }
 
-  function calculateSignaturePosition(clientX, clientY, signatureWidth, signatureHeight, pdfBox) {
-    const rawX = (clientX - pdfBox.left) / pdfBox.width
-    const rawY = (clientY - pdfBox.top) / pdfBox.height
+  function calculateSignaturePosition(
+    clientX,
+    clientY,
+    signatureWidth,
+    signatureHeight,
+    pdfBox,
+    offsetX,
+    offsetY
+  ) {
+    let rawX
+    let rawY
+
+    if (offsetX !== undefined && offsetY !== undefined) {
+      rawX = (clientX - pdfBox.left - offsetX) / pdfBox.width
+      rawY = (clientY - pdfBox.top - offsetY) / pdfBox.height
+    } else {
+      rawX = (clientX - pdfBox.left) / pdfBox.width - signatureWidth / 2
+      rawY = (clientY - pdfBox.top) / pdfBox.height - signatureHeight / 2
+    }
 
     const finalX = Math.min(
-      Math.max(rawX - signatureWidth / 2, 0),
+      Math.max(rawX, 0),
       1 - signatureWidth
     )
 
     const finalY = Math.min(
-      Math.max(rawY - signatureHeight / 2, 0),
+      Math.max(rawY, 0),
       1 - signatureHeight
     )
 
@@ -298,6 +450,7 @@ function DocumentPreview() {
   function getTypedSignatureContent() {
     return {
       type: "text",
+      source: "typed",
       value: getCleanSignatureText()
     }
   }
@@ -305,15 +458,28 @@ function DocumentPreview() {
   function getDrawnSignatureContent() {
     return {
       type: "image",
+      source: "drawn",
       value: drawnSignature
     }
   }
 
-  function startNewSignatureDrag(event, signatureContent) {
+  function getUploadedSignatureContent() {
+    return {
+      type: "image",
+      source: "uploaded",
+      value: uploadedSignature
+    }
+  }
+
+  function handleSignatureTextChange(event) {
+    setSignatureText(event.target.value)
+  }
+
+  function startNewSignatureDrag(event, content) {
     event.preventDefault()
 
-    if (signatureContent.type === "image" && !signatureContent.value) {
-      setMessage("Please draw your signature first")
+    if (content.type === "image" && !content.value) {
+      setMessage("Please draw or upload your signature first")
       return
     }
 
@@ -321,13 +487,13 @@ function DocumentPreview() {
       type: "new",
       width: SIGNATURE_WIDTH,
       height: SIGNATURE_HEIGHT,
-      content: signatureContent
+      content
     })
 
     setDragPreview({
       x: event.clientX,
       y: event.clientY,
-      content: signatureContent
+      content
     })
 
     setMessage("Drag and release the signature on the PDF")
@@ -337,8 +503,11 @@ function DocumentPreview() {
     event.preventDefault()
     event.stopPropagation()
 
+    const signatureBox = event.currentTarget.getBoundingClientRect()
+
     const existingContent = signatureContents[signature.id] || {
       type: "text",
+      source: "typed",
       value: "Signature"
     }
 
@@ -347,7 +516,9 @@ function DocumentPreview() {
       signatureId: signature.id,
       width: signature.width,
       height: signature.height,
-      content: existingContent
+      content: existingContent,
+      offsetX: event.clientX - signatureBox.left,
+      offsetY: event.clientY - signatureBox.top
     })
 
     setDragPreview({
@@ -412,6 +583,7 @@ function DocumentPreview() {
 
     setDrawnSignature(dataUrl)
     setIsDrawing(false)
+    setMessage("Drawn signature ready. Drag the preview onto the PDF.")
   }
 
   function clearDrawnSignature() {
@@ -421,6 +593,111 @@ function DocumentPreview() {
     context.clearRect(0, 0, canvas.width, canvas.height)
     setDrawnSignature("")
     setMessage("Drawn signature cleared")
+  }
+
+  function handleSignatureImageUpload(event) {
+    const file = event.target.files[0]
+
+    if (!file) {
+      return
+    }
+
+    const allowedImageTypes = ["image/png", "image/jpeg", "image/jpg"]
+
+    if (!allowedImageTypes.includes(file.type)) {
+      setMessage("Only PNG, JPG, and JPEG signature images are supported.")
+      return
+    }
+
+    if (file.size < MIN_SIGNATURE_IMAGE_SIZE) {
+      setMessage("Signature image is too small. Minimum size is 1 KB.")
+      return
+    }
+
+    if (file.size > MAX_SIGNATURE_IMAGE_SIZE) {
+      setMessage("Signature image is too large. Maximum size is 2 MB.")
+      return
+    }
+
+    const reader = new FileReader()
+
+    reader.onload = async () => {
+      try {
+        if (typeof reader.result !== "string") {
+          setMessage("Could not read this image")
+          return
+        }
+
+        const compressedImage = await compressImage(reader.result)
+
+        if (compressedImage.length > MAX_IMAGE_DATA_LENGTH) {
+          setMessage("Image is still too large. Please upload a smaller signature image.")
+          return
+        }
+
+        setUploadedSignature(compressedImage)
+        setMessage("Signature image uploaded. Drag the preview onto the PDF.")
+      } catch (error) {
+        setMessage("Could not upload this image. Please try another image.")
+      }
+    }
+
+    reader.onerror = () => {
+      setMessage("Could not upload signature image")
+    }
+
+    reader.readAsDataURL(file)
+  }
+
+  function compressImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image()
+
+      image.onload = () => {
+        const canvas = document.createElement("canvas")
+        const maxWidth = 360
+        const maxHeight = 130
+
+        let width = image.width
+        let height = image.height
+
+        if (width > maxWidth) {
+          height = height * (maxWidth / width)
+          width = maxWidth
+        }
+
+        if (height > maxHeight) {
+          width = width * (maxHeight / height)
+          height = maxHeight
+        }
+
+        canvas.width = width
+        canvas.height = height
+
+        const context = canvas.getContext("2d")
+        context.clearRect(0, 0, width, height)
+        context.drawImage(image, 0, 0, width, height)
+
+        const compressedDataUrl = canvas.toDataURL("image/png")
+        resolve(compressedDataUrl)
+      }
+
+      image.onerror = () => {
+        reject(new Error("Image could not be loaded"))
+      }
+
+      image.src = dataUrl
+    })
+  }
+
+  function clearUploadedSignature() {
+    setUploadedSignature("")
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+
+    setMessage("Uploaded signature cleared")
   }
 
   async function saveSignaturePosition(signatureData, contentToSave) {
@@ -434,7 +711,7 @@ function DocumentPreview() {
     setIsSavingSignature(true)
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/signatures", {
+      const response = await fetch(`${API_BASE_URL}/api/signatures`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -480,7 +757,7 @@ function DocumentPreview() {
     setIsSavingSignature(true)
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/signatures/${signatureId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/signatures/${signatureId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -523,7 +800,7 @@ function DocumentPreview() {
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/signatures/${signatureId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/signatures/${signatureId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`
@@ -553,37 +830,6 @@ function DocumentPreview() {
     }
   }
 
-  function addTypedDefaultSignatureBox() {
-    const signatureData = {
-      document_id: Number(id),
-      page_number: pageNumber,
-      x_position: 0.45,
-      y_position: 0.72,
-      width: SIGNATURE_WIDTH,
-      height: SIGNATURE_HEIGHT
-    }
-
-    saveSignaturePosition(signatureData, getTypedSignatureContent())
-  }
-
-  function addDrawnDefaultSignatureBox() {
-    if (!drawnSignature) {
-      setMessage("Please draw your signature first")
-      return
-    }
-
-    const signatureData = {
-      document_id: Number(id),
-      page_number: pageNumber,
-      x_position: 0.45,
-      y_position: 0.72,
-      width: SIGNATURE_WIDTH,
-      height: SIGNATURE_HEIGHT
-    }
-
-    saveSignaturePosition(signatureData, getDrawnSignatureContent())
-  }
-
   function renderSignatureContent(content) {
     if (!content) {
       return (
@@ -605,7 +851,8 @@ function DocumentPreview() {
       return (
         <img
           src={content.value}
-          alt="Drawn signature"
+          alt="Signature"
+          draggable={false}
           className="max-w-full max-h-full object-contain"
         />
       )
@@ -617,6 +864,10 @@ function DocumentPreview() {
       </span>
     )
   }
+
+  const typedContent = getTypedSignatureContent()
+  const drawnContent = getDrawnSignatureContent()
+  const uploadedContent = getUploadedSignatureContent()
 
   const currentPageSignatures = savedSignatures.filter((signature) => {
     return signature.page_number === pageNumber
@@ -636,7 +887,7 @@ function DocumentPreview() {
     <main className="min-h-screen bg-slate-100">
       {dragPreview && (
         <div
-          className="fixed z-50 border-2 border-dashed border-slate-900 bg-white shadow-lg px-8 py-4 rounded-lg pointer-events-none text-slate-800 min-w-36 min-h-14 flex items-center justify-center"
+          className="fixed z-50 bg-white shadow-lg px-8 py-4 rounded-lg pointer-events-none text-slate-800 min-w-36 min-h-14 flex items-center justify-center"
           style={{
             left: dragPreview.x,
             top: dragPreview.y,
@@ -689,6 +940,10 @@ function DocumentPreview() {
               Signature Tools
             </h3>
 
+            <p className="mt-2 text-sm text-slate-500">
+              Drag a signature preview and drop it on the PDF.
+            </p>
+
             <label className="mt-5 block text-sm font-medium text-slate-700">
               Type your signature
             </label>
@@ -696,35 +951,23 @@ function DocumentPreview() {
             <input
               type="text"
               value={signatureText}
-              onChange={(event) => setSignatureText(event.target.value)}
+              onChange={handleSignatureTextChange}
               placeholder="Enter your name"
               className="mt-2 w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-700"
             />
 
-            <p className="mt-4 text-sm text-slate-600">
-              Typed Signature Preview
-            </p>
-
             <div
-              onMouseDown={(event) => startNewSignatureDrag(event, getTypedSignatureContent())}
-              className="mt-2 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-5 text-center cursor-grab active:cursor-grabbing select-none"
+              onMouseDown={(event) => startNewSignatureDrag(event, typedContent)}
+              className="mt-3 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-4 text-center cursor-grab active:cursor-grabbing select-none hover:bg-slate-100"
             >
               <p className="font-serif italic text-2xl text-slate-800">
                 {getCleanSignatureText()}
               </p>
 
               <p className="mt-2 text-xs text-slate-500">
-                Drag typed signature onto PDF
+                Drag typed signature to PDF
               </p>
             </div>
-
-            <button
-              onClick={addTypedDefaultSignatureBox}
-              disabled={isSavingSignature}
-              className="mt-4 w-full bg-slate-800 text-white px-5 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-60"
-            >
-              Add Typed Default Box
-            </button>
 
             <div className="mt-6 border-t border-slate-200 pt-5">
               <p className="text-sm font-medium text-slate-700">
@@ -734,12 +977,12 @@ function DocumentPreview() {
               <canvas
                 ref={signatureCanvasRef}
                 width={260}
-                height={120}
+                height={80}
                 onMouseDown={startDrawing}
                 onMouseMove={drawSignature}
                 onMouseUp={stopDrawing}
                 onMouseLeave={stopDrawing}
-                className="mt-2 w-full h-32 border border-slate-300 rounded-lg bg-white cursor-crosshair"
+                className="mt-2 w-full h-20 border border-slate-300 rounded-lg bg-white cursor-crosshair"
               />
 
               <div className="mt-3 flex gap-3">
@@ -749,36 +992,68 @@ function DocumentPreview() {
                 >
                   Clear
                 </button>
-
-                <button
-                  onClick={addDrawnDefaultSignatureBox}
-                  disabled={!drawnSignature || isSavingSignature}
-                  className="flex-1 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-60"
-                >
-                  Add Drawn
-                </button>
               </div>
 
-              <p className="mt-4 text-sm text-slate-600">
-                Drawn Signature Preview
-              </p>
-
               <div
-                onMouseDown={(event) => startNewSignatureDrag(event, getDrawnSignatureContent())}
-                className="mt-2 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-4 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
+                onMouseDown={(event) => startNewSignatureDrag(event, drawnContent)}
+                className="mt-3 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-3 h-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:bg-slate-100"
               >
                 {drawnSignature ? (
                   <img
                     src={drawnSignature}
                     alt="Drawn signature preview"
+                    draggable={false}
                     className="max-w-full max-h-full object-contain"
                   />
                 ) : (
                   <p className="text-sm text-slate-500">
-                    Draw first, then drag
+                    Draw first, then drag this preview
                   </p>
                 )}
               </div>
+            </div>
+
+            <div className="mt-6 border-t border-slate-200 pt-5">
+              <p className="text-sm font-medium text-slate-700">
+                Upload signature image
+              </p>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png, image/jpeg, image/jpg"
+                onChange={handleSignatureImageUpload}
+                className="mt-2 block w-full text-sm text-slate-700 border border-slate-300 rounded-lg cursor-pointer bg-white focus:outline-none"
+              />
+
+              <p className="mt-2 text-xs text-slate-500">
+                Supported: PNG, JPG, JPEG. Minimum size: 1 KB. Maximum size: 2 MB.
+              </p>
+
+              <div
+                onMouseDown={(event) => startNewSignatureDrag(event, uploadedContent)}
+                className="mt-3 border-2 border-dashed border-slate-400 bg-slate-50 rounded-xl p-3 h-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:bg-slate-100"
+              >
+                {uploadedSignature ? (
+                  <img
+                    src={uploadedSignature}
+                    alt="Uploaded signature preview"
+                    draggable={false}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    Upload image, then drag this preview
+                  </p>
+                )}
+              </div>
+
+              <button
+                onClick={clearUploadedSignature}
+                className="mt-3 w-full border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50"
+              >
+                Clear Uploaded
+              </button>
             </div>
 
             <div className="mt-6 rounded-xl bg-slate-50 p-4">
@@ -787,11 +1062,15 @@ function DocumentPreview() {
               </p>
 
               <p className="mt-1 text-xs text-slate-500">
-                Drag signature boxes on the PDF to adjust their position.
+                Drag preview → drop on PDF.
               </p>
 
               <p className="mt-1 text-xs text-slate-500">
-                Click × on a signature box to remove it.
+                Drag placed signature to move it.
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Hover over placed signature to show × delete button.
               </p>
             </div>
           </aside>
@@ -841,7 +1120,7 @@ function DocumentPreview() {
                     <div
                       key={signature.id}
                       onMouseDown={(event) => startExistingSignatureDrag(event, signature)}
-                      className="absolute z-20 border-2 border-dashed border-slate-900 bg-white/80 flex items-center justify-center text-xs font-bold text-slate-800 cursor-grab active:cursor-grabbing select-none"
+                      className="group absolute z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
                       style={{
                         left: `${signature.x_position * 100}%`,
                         top: `${signature.y_position * 100}%`,
@@ -849,7 +1128,9 @@ function DocumentPreview() {
                         height: `${signature.height * 100}%`
                       }}
                     >
-                      {renderSignatureContent(signatureContents[signature.id])}
+                      <div className="w-full h-full flex items-center justify-center">
+                        {renderSignatureContent(signatureContents[signature.id])}
+                      </div>
 
                       <button
                         onMouseDown={(event) => {
@@ -859,7 +1140,7 @@ function DocumentPreview() {
                           event.stopPropagation()
                           deleteSignature(signature.id)
                         }}
-                        className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center hover:bg-red-700"
+                        className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-red-700 transition-opacity"
                       >
                         ×
                       </button>
@@ -869,7 +1150,7 @@ function DocumentPreview() {
               </div>
 
               <p className="mt-4 text-sm text-slate-600">
-                Type or draw your signature, drag it onto the PDF, and move it wherever needed.
+                Drag a signature from the left side and drop it on the PDF.
               </p>
             </div>
           )}
