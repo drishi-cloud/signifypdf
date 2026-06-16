@@ -1,10 +1,11 @@
-import { Routes, Route } from "react-router-dom"
+import { Route, Routes } from "react-router-dom"
 
-import Home from "./pages/Home"
-import Register from "./pages/Register"
-import Login from "./pages/Login"
-import Dashboard from "./pages/Dashboard"
-import DocumentPreview from "./pages/DocumentPreview"
+import Home from "./pages/Home.jsx"
+import Register from "./pages/Register.jsx"
+import Login from "./pages/Login.jsx"
+import Dashboard from "./pages/Dashboard.jsx"
+import DocumentPreview from "./pages/DocumentPreview.jsx"
+import Verify from "./pages/Verify.jsx"
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/documents/:id" element={<DocumentPreview />} />
+      <Route path="/verify" element={<Verify />} />
     </Routes>
   )
 }

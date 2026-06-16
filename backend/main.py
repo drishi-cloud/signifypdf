@@ -5,7 +5,7 @@ from database import Base, engine
 from models.user import User
 from models.document import Document
 from models.signature import Signature
-from routers import auth, documents, signatures
+from routers import auth, documents, signatures, verification
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -32,6 +32,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(signatures.router)
+app.include_router(verification.router)
 
 
 @app.get("/")
