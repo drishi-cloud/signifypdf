@@ -1,49 +1,50 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
+const API_BASE_URL = "http://127.0.0.1:8000"
+
 function Register() {
   const navigate = useNavigate()
 
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: ""
-  })
-
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [message, setMessage] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(false)
 
-  function handleChange(event) {
-    const { name, value } = event.target
-
-    setFormData((prevData) => {
-      return {
-        ...prevData,
-        [name]: value
-      }
-    })
-  }
-
-  async function handleSubmit(event) {
+  async function handleRegister(event) {
     event.preventDefault()
 
-    setMessage("")
-    setIsLoading(true)
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      setMessage("Please fill all fields")
+      return
+    }
+
+    if (password.length < 6) {
+      setMessage("Password must be at least 6 characters")
+      return
+    }
+
+    setIsRegistering(true)
+    setMessage("Creating account...")
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/auth/register", {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          password: password
+        })
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        setMessage(data.detail || "Registration failed")
-        setIsLoading(false)
+        setMessage(data.detail || "Could not register user")
         return
       }
 
@@ -55,86 +56,85 @@ function Register() {
     } catch (error) {
       setMessage("Backend is not running or something went wrong")
     } finally {
-      setIsLoading(false)
+      setIsRegistering(false)
     }
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
-      <section className="bg-white shadow-lg rounded-2xl p-8 w-full max-w-md">
+    <main className="min-h-screen bg-slate-100 flex items-center justify-center px-6">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
         <h1 className="text-3xl font-bold text-slate-800 text-center">
           Create Account
         </h1>
 
-        <p className="mt-2 text-slate-600 text-center">
-          Register to start signing PDFs securely
+        <p className="mt-2 text-center text-slate-600">
+          Register to start signing PDF documents.
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Name
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="mt-1 w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-700"
-              placeholder="Enter your name"
-            />
-          </div>
+        <form onSubmit={handleRegister} className="mt-6">
+          <label className="block text-sm font-medium text-slate-700">
+            Name
+          </label>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Email
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              className="mt-1 w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-700"
-              placeholder="Enter your email"
-            />
-          </div>
+          <input
+            type="text"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Enter your name"
+            className="mt-2 w-full border border-slate-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-700"
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Password
-            </label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="mt-1 w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-700"
-              placeholder="Minimum 6 characters"
-            />
-          </div>
+          <label className="block text-sm font-medium text-slate-700 mt-4">
+            Email
+          </label>
 
-          {message && (
-            <p className="text-sm text-center text-slate-700">
-              {message}
-            </p>
-          )}
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="Enter your email"
+            className="mt-2 w-full border border-slate-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-700"
+          />
+
+          <label className="block text-sm font-medium text-slate-700 mt-4">
+            Password
+          </label>
+
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Minimum 6 characters"
+            className="mt-2 w-full border border-slate-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-700"
+          />
 
           <button
             type="submit"
-            disabled={isLoading}
-            className="w-full bg-slate-800 text-white py-2 rounded-lg font-medium hover:bg-slate-700 disabled:opacity-60"
+            disabled={isRegistering}
+            className="mt-6 w-full bg-slate-800 text-white px-6 py-3 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isLoading ? "Creating account..." : "Register"}
+            {isRegistering ? "Creating..." : "Register"}
           </button>
         </form>
 
-        <p className="mt-5 text-center text-sm text-slate-600">
+        {message && (
+          <div className="mt-5 bg-slate-50 rounded-xl p-4">
+            <p className="text-slate-700 text-sm">
+              {message}
+            </p>
+          </div>
+        )}
+
+        <p className="mt-6 text-center text-sm text-slate-600">
           Already have an account?{" "}
-          <Link to="/login" className="font-medium text-slate-900 underline">
+          <Link
+            to="/login"
+            className="text-slate-900 font-semibold hover:underline"
+          >
             Login
           </Link>
         </p>
-      </section>
+      </div>
     </main>
   )
 }

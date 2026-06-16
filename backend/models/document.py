@@ -18,6 +18,5 @@ class Document(Base):
     status = Column(String, default="uploaded")
     verification_id = Column(String, unique=True, index=True, nullable=False)
     file_hash = Column(String, nullable=False)
-    
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

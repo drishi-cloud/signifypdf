@@ -23,8 +23,13 @@ router = APIRouter(
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED
 )
-def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == user.email).first()
+def register_user(
+    user_data: UserCreate,
+    db: Session = Depends(get_db)
+):
+    existing_user = db.query(User).filter(
+        User.email == user_data.email
+    ).first()
 
     if existing_user:
         raise HTTPException(
@@ -33,9 +38,9 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
         )
 
     new_user = User(
-        name=user.name,
-        email=user.email,
-        hashed_password=hash_password(user.password)
+        name=user_data.name,
+        email=user_data.email,
+        hashed_password=hash_password(user_data.password)
     )
 
     db.add(new_user)
@@ -49,18 +54,23 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     "/login",
     response_model=TokenResponse
 )
-def login_user(user: UserLogin, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == user.email).first()
+def login_user(
+    user_data: UserLogin,
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(
+        User.email == user_data.email
+    ).first()
 
-    if not existing_user:
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
 
     is_password_correct = verify_password(
-        user.password,
-        existing_user.hashed_password
+        user_data.password,
+        user.hashed_password
     )
 
     if not is_password_correct:
@@ -69,15 +79,13 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
             detail="Invalid email or password"
         )
 
-    access_token = create_access_token(
-        data={
-            "sub": existing_user.email,
-            "user_id": existing_user.id
-        }
-    )
+    token = create_access_token({
+        "sub": user.email,
+        "user_id": user.id
+    })
 
     return {
-        "access_token": access_token,
+        "access_token": token,
         "token_type": "bearer"
     }
 
@@ -86,5 +94,7 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
     "/me",
     response_model=UserResponse
 )
-def get_my_profile(current_user: User = Depends(get_current_user)):
+def get_logged_in_user(
+    current_user: User = Depends(get_current_user)
+):
     return current_user

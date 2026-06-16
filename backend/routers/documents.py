@@ -10,6 +10,7 @@ from database import get_db
 from models.document import Document
 from models.signature import Signature
 from models.user import User
+from models.audit_log import AuditLog
 from schemas.document import DocumentResponse
 from utils.audit import create_audit_log
 from utils.security import get_current_user
@@ -201,6 +202,11 @@ def delete_document(
     db.query(Signature).filter(
         Signature.document_id == document.id,
         Signature.user_id == current_user.id
+    ).delete()
+
+    db.query(AuditLog).filter(
+        AuditLog.document_id == document.id,
+        AuditLog.user_id == current_user.id
     ).delete()
 
     if os.path.exists(document.file_path):

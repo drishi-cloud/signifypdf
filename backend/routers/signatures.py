@@ -11,13 +11,13 @@ from database import get_db
 from models.document import Document
 from models.signature import Signature
 from models.user import User
-from utils.audit import create_audit_log
 from schemas.signature import (
     SignatureCreate,
     SignatureUpdate,
     SignatureResponse,
     SignatureFinalizeRequest
 )
+from utils.audit import create_audit_log
 from utils.security import get_current_user
 
 
@@ -106,12 +106,12 @@ def create_signature(
     db.refresh(signature)
 
     create_audit_log(
-    db=db,
-    document_id=signature.document_id,
-    user_id=current_user.id,
-    action="SIGNATURE_ADDED",
-    message="Signature added to document"
-)
+        db=db,
+        document_id=signature.document_id,
+        user_id=current_user.id,
+        action="SIGNATURE_ADDED",
+        message="Signature added to document"
+    )
 
     db.commit()
 
@@ -238,13 +238,15 @@ def finalize_signed_pdf(
         pdf_document.close()
 
     document.status = "signed"
+
     create_audit_log(
-    db=db,
-    document_id=document.id,
-    user_id=current_user.id,
-    action="PDF_SIGNED",
-    message="Final signed PDF generated"
-)
+        db=db,
+        document_id=document.id,
+        user_id=current_user.id,
+        action="PDF_SIGNED",
+        message="Final signed PDF generated"
+    )
+
     db.commit()
 
     return FileResponse(
@@ -310,12 +312,12 @@ def update_signature(
     signature.height = signature_data.height
 
     create_audit_log(
-    db=db,
-    document_id=signature.document_id,
-    user_id=current_user.id,
-    action="SIGNATURE_MOVED",
-    message="Signature position updated"
-)
+        db=db,
+        document_id=signature.document_id,
+        user_id=current_user.id,
+        action="SIGNATURE_MOVED",
+        message="Signature position updated"
+    )
 
     db.commit()
     db.refresh(signature)
@@ -342,13 +344,14 @@ def delete_signature(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Signature not found"
         )
+
     create_audit_log(
-    db=db,
-    document_id=signature.document_id,
-    user_id=current_user.id,
-    action="SIGNATURE_DELETED",
-    message="Signature removed from document"
-)
+        db=db,
+        document_id=signature.document_id,
+        user_id=current_user.id,
+        action="SIGNATURE_DELETED",
+        message="Signature removed from document"
+    )
 
     db.delete(signature)
     db.commit()

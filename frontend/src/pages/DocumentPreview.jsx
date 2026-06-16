@@ -50,6 +50,7 @@ function DocumentPreview() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSavingSignature, setIsSavingSignature] = useState(false)
   const [isFinalizing, setIsFinalizing] = useState(false)
+  const [deletingSignatureId, setDeletingSignatureId] = useState(null)
   const [isDrawing, setIsDrawing] = useState(false)
 
   const [dragItem, setDragItem] = useState(null)
@@ -59,13 +60,13 @@ function DocumentPreview() {
   useEffect(() => {
     setHasLoadedSignatureStorage(false)
 
-    const savedTypedSignature = safeGetStorage("signifypdf_typed_signature")
-    const savedTypedFont = safeGetStorage("signifypdf_typed_signature_font")
-    const savedTypedColor = safeGetStorage("signifypdf_typed_signature_color")
-    const savedDrawPenColor = safeGetStorage("signifypdf_draw_pen_color")
+    const savedTypedSignature = safeGetStorage(getStorageKey("typed_signature"))
+    const savedTypedFont = safeGetStorage(getStorageKey("typed_signature_font"))
+    const savedTypedColor = safeGetStorage(getStorageKey("typed_signature_color"))
+    const savedDrawPenColor = safeGetStorage(getStorageKey("draw_pen_color"))
 
-    const savedDrawnSignature = safeGetStorage("signifypdf_drawn_signature")
-    const savedUploadedSignature = safeGetStorage("signifypdf_uploaded_signature")
+    const savedDrawnSignature = safeGetStorage(getStorageKey("drawn_signature"))
+    const savedUploadedSignature = safeGetStorage(getStorageKey("uploaded_signature"))
 
     if (savedTypedSignature) {
       setSignatureText(savedTypedSignature)
@@ -86,17 +87,17 @@ function DocumentPreview() {
     if (savedDrawnSignature && savedDrawnSignature.length < MAX_IMAGE_DATA_LENGTH) {
       setDrawnSignature(savedDrawnSignature)
     } else if (savedDrawnSignature) {
-      safeRemoveStorage("signifypdf_drawn_signature")
+      safeRemoveStorage(getStorageKey("drawn_signature"))
     }
 
     if (savedUploadedSignature && savedUploadedSignature.length < MAX_IMAGE_DATA_LENGTH) {
       setUploadedSignature(savedUploadedSignature)
     } else if (savedUploadedSignature) {
-      safeRemoveStorage("signifypdf_uploaded_signature")
+      safeRemoveStorage(getStorageKey("uploaded_signature"))
     }
 
-    const newStorageKey = `signifypdf_signature_contents_${id}`
-    const oldStorageKey = `signifypdf_signature_texts_${id}`
+    const newStorageKey = getStorageKey(`signature_contents_${id}`)
+    const oldStorageKey = getStorageKey(`signature_texts_${id}`)
 
     const newStoredContents = parseStoredSignatureContents(
       safeGetStorage(newStorageKey),
@@ -124,7 +125,7 @@ function DocumentPreview() {
       return
     }
 
-    safeSetStorage("signifypdf_typed_signature", signatureText)
+    safeSetStorage(getStorageKey("typed_signature"), signatureText)
   }, [signatureText, hasLoadedSignatureStorage])
 
   useEffect(() => {
@@ -132,7 +133,7 @@ function DocumentPreview() {
       return
     }
 
-    safeSetStorage("signifypdf_typed_signature_font", typedSignatureFont)
+    safeSetStorage(getStorageKey("typed_signature_font"), typedSignatureFont)
   }, [typedSignatureFont, hasLoadedSignatureStorage])
 
   useEffect(() => {
@@ -140,7 +141,7 @@ function DocumentPreview() {
       return
     }
 
-    safeSetStorage("signifypdf_typed_signature_color", typedSignatureColor)
+    safeSetStorage(getStorageKey("typed_signature_color"), typedSignatureColor)
   }, [typedSignatureColor, hasLoadedSignatureStorage])
 
   useEffect(() => {
@@ -148,7 +149,7 @@ function DocumentPreview() {
       return
     }
 
-    safeSetStorage("signifypdf_draw_pen_color", drawPenColor)
+    safeSetStorage(getStorageKey("draw_pen_color"), drawPenColor)
   }, [drawPenColor, hasLoadedSignatureStorage])
 
   useEffect(() => {
@@ -157,13 +158,13 @@ function DocumentPreview() {
     }
 
     if (drawnSignature) {
-      const isSaved = safeSetStorage("signifypdf_drawn_signature", drawnSignature)
+      const isSaved = safeSetStorage(getStorageKey("drawn_signature"), drawnSignature)
 
       if (!isSaved) {
         setMessage("Drawn signature is too large to save. Please draw again.")
       }
     } else {
-      safeRemoveStorage("signifypdf_drawn_signature")
+      safeRemoveStorage(getStorageKey("drawn_signature"))
     }
   }, [drawnSignature, hasLoadedSignatureStorage])
 
@@ -173,14 +174,14 @@ function DocumentPreview() {
     }
 
     if (uploadedSignature) {
-      const isSaved = safeSetStorage("signifypdf_uploaded_signature", uploadedSignature)
+      const isSaved = safeSetStorage(getStorageKey("uploaded_signature"), uploadedSignature)
 
       if (!isSaved) {
         setUploadedSignature("")
         setMessage("Uploaded signature is too large. Please upload a smaller image.")
       }
     } else {
-      safeRemoveStorage("signifypdf_uploaded_signature")
+      safeRemoveStorage(getStorageKey("uploaded_signature"))
     }
   }, [uploadedSignature, hasLoadedSignatureStorage])
 
@@ -197,7 +198,7 @@ function DocumentPreview() {
     }
 
     const isSaved = safeSetStorage(
-      `signifypdf_signature_contents_${id}`,
+      getStorageKey(`signature_contents_${id}`),
       storageValue
     )
 
@@ -304,7 +305,7 @@ function DocumentPreview() {
       return
     }
 
-    function handleMouseMove(event) {
+    function handlePointerMove(event) {
       setDragPreview({
         x: event.clientX,
         y: event.clientY,
@@ -312,7 +313,7 @@ function DocumentPreview() {
       })
     }
 
-    async function handleMouseUp(event) {
+    async function handlePointerUp(event) {
       const pdfArea = pdfAreaRef.current
 
       if (!pdfArea) {
@@ -372,14 +373,53 @@ function DocumentPreview() {
       stopDragging()
     }
 
-    window.addEventListener("mousemove", handleMouseMove)
-    window.addEventListener("mouseup", handleMouseUp)
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp)
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove)
-      window.removeEventListener("mouseup", handleMouseUp)
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
     }
   }, [dragItem, id, pageNumber])
+
+  function decodeJwtPayload(token) {
+    try {
+      const payloadBase64Url = token.split(".")[1]
+
+      if (!payloadBase64Url) {
+        return null
+      }
+
+      const payloadBase64 = payloadBase64Url
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(Math.ceil(payloadBase64Url.length / 4) * 4, "=")
+
+      return JSON.parse(atob(payloadBase64))
+    } catch (error) {
+      return null
+    }
+  }
+
+  function getCurrentUserStoragePrefix() {
+    const token = localStorage.getItem("token")
+
+    if (!token) {
+      return "guest"
+    }
+
+    const payload = decodeJwtPayload(token)
+
+    if (!payload) {
+      return "guest"
+    }
+
+    return `user_${payload.user_id || payload.sub || "guest"}`
+  }
+
+  function getStorageKey(key) {
+    return `signifypdf_${getCurrentUserStoragePrefix()}_${key}`
+  }
 
   function safeGetStorage(key) {
     try {
@@ -561,6 +601,10 @@ function DocumentPreview() {
   function startNewSignatureDrag(event, content) {
     event.preventDefault()
 
+    if (event.button !== undefined && event.button !== 0) {
+      return
+    }
+
     if (content.type === "image" && !content.value) {
       setMessage("Please draw or upload your signature first")
       return
@@ -585,6 +629,14 @@ function DocumentPreview() {
   function startExistingSignatureDrag(event, signature) {
     event.preventDefault()
     event.stopPropagation()
+
+    if (event.button !== undefined && event.button !== 0) {
+      return
+    }
+
+    if (deletingSignatureId === signature.id) {
+      return
+    }
 
     const signatureBox = event.currentTarget.getBoundingClientRect()
 
@@ -885,6 +937,9 @@ function DocumentPreview() {
       return
     }
 
+    setDeletingSignatureId(signatureId)
+    setMessage("Removing signature...")
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/signatures/${signatureId}`, {
         method: "DELETE",
@@ -913,6 +968,8 @@ function DocumentPreview() {
       setMessage("Signature removed successfully")
     } catch (error) {
       setMessage("Backend is not running or something went wrong")
+    } finally {
+      setDeletingSignatureId(null)
     }
   }
 
@@ -1234,8 +1291,8 @@ function DocumentPreview() {
                 </div>
 
                 <div
-                  onMouseDown={(event) => startNewSignatureDrag(event, typedContent)}
-                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-5 text-center cursor-grab active:cursor-grabbing select-none hover:opacity-95"
+                  onPointerDown={(event) => startNewSignatureDrag(event, typedContent)}
+                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-5 text-center cursor-grab active:cursor-grabbing select-none touch-none hover:opacity-95"
                   style={{
                     backgroundColor: getPreviewBackgroundColor(typedContent)
                   }}
@@ -1297,8 +1354,8 @@ function DocumentPreview() {
                 </button>
 
                 <div
-                  onMouseDown={(event) => startNewSignatureDrag(event, drawnContent)}
-                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-3 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:opacity-95"
+                  onPointerDown={(event) => startNewSignatureDrag(event, drawnContent)}
+                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-3 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none hover:opacity-95"
                   style={{
                     backgroundColor: getPreviewBackgroundColor(drawnContent)
                   }}
@@ -1338,8 +1395,8 @@ function DocumentPreview() {
                 </p>
 
                 <div
-                  onMouseDown={(event) => startNewSignatureDrag(event, uploadedContent)}
-                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-3 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:opacity-95"
+                  onPointerDown={(event) => startNewSignatureDrag(event, uploadedContent)}
+                  className="mt-4 border-2 border-dashed border-slate-400 rounded-xl p-3 h-24 flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none hover:opacity-95"
                   style={{
                     backgroundColor: getPreviewBackgroundColor(uploadedContent)
                   }}
@@ -1434,8 +1491,8 @@ function DocumentPreview() {
                   {currentPageSignatures.map((signature) => (
                     <div
                       key={signature.id}
-                      onMouseDown={(event) => startExistingSignatureDrag(event, signature)}
-                      className="group absolute z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none rounded-md border border-transparent hover:border-slate-500 hover:border-dashed active:border-slate-800 active:border-solid transition-all"
+                      onPointerDown={(event) => startExistingSignatureDrag(event, signature)}
+                      className="group absolute z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none rounded-md border border-transparent hover:border-slate-500 hover:border-dashed active:border-slate-800 active:border-solid transition-all"
                       style={{
                         left: `${signature.x_position * 100}%`,
                         top: `${signature.y_position * 100}%`,
@@ -1443,21 +1500,25 @@ function DocumentPreview() {
                         height: `${signature.height * 100}%`
                       }}
                     >
-                      <div className="w-full h-full flex items-center justify-center">
+                      <div className="w-full h-full flex items-center justify-center pointer-events-none">
                         {renderSignatureContent(signatureContents[signature.id])}
                       </div>
 
                       <button
-                        onMouseDown={(event) => {
+                        type="button"
+                        disabled={deletingSignatureId === signature.id}
+                        onPointerDown={(event) => {
+                          event.preventDefault()
                           event.stopPropagation()
                         }}
                         onClick={(event) => {
+                          event.preventDefault()
                           event.stopPropagation()
                           deleteSignature(signature.id)
                         }}
-                        className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-red-700 transition-opacity"
+                        className="absolute -top-4 -right-4 bg-red-600 text-white rounded-full w-8 h-8 text-sm flex items-center justify-center opacity-100 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
                       >
-                        ×
+                        {deletingSignatureId === signature.id ? "..." : "×"}
                       </button>
                     </div>
                   ))}
