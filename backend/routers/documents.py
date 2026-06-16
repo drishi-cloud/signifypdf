@@ -5,12 +5,13 @@ import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from models.signature import Signature
 
 from database import get_db
 from models.document import Document
+from models.signature import Signature
 from models.user import User
 from schemas.document import DocumentResponse
+from utils.audit import create_audit_log
 from utils.security import get_current_user
 
 
@@ -19,10 +20,15 @@ router = APIRouter(
     tags=["Documents"]
 )
 
-
 UPLOAD_DIR = "uploads"
-
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+MAX_PDF_SIZE = 10 * 1024 * 1024
+MIN_PDF_SIZE = 1024
+
+
+def calculate_file_hash(file_bytes: bytes) -> str:
+    return hashlib.sha256(file_bytes).hexdigest()
 
 
 @router.post(
@@ -43,13 +49,20 @@ async def upload_pdf(
 
     file_bytes = await file.read()
 
-    if len(file_bytes) == 0:
+    if len(file_bytes) < MIN_PDF_SIZE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file is empty"
+            detail="PDF file is too small. Minimum size is 1 KB."
         )
 
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    if len(file_bytes) > MAX_PDF_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PDF file is too large. Maximum size is 10 MB."
+        )
+
+    file_hash = calculate_file_hash(file_bytes)
+
     existing_document = db.query(Document).filter(
         Document.owner_id == current_user.id,
         Document.file_hash == file_hash
@@ -58,15 +71,14 @@ async def upload_pdf(
     if existing_document:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This PDF has already been uploaded"
-    )
+            detail="This PDF is already uploaded"
+        )
 
-    unique_id = uuid.uuid4().hex
-    stored_filename = f"{unique_id}_{file.filename}"
+    stored_filename = f"{uuid.uuid4().hex}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, stored_filename)
 
-    with open(file_path, "wb") as saved_file:
-        saved_file.write(file_bytes)
+    with open(file_path, "wb") as uploaded_file:
+        uploaded_file.write(file_bytes)
 
     verification_id = f"SIG-{uuid.uuid4().hex[:10].upper()}"
 
@@ -76,6 +88,7 @@ async def upload_pdf(
         stored_filename=stored_filename,
         file_path=file_path,
         file_size=len(file_bytes),
+        status="uploaded",
         verification_id=verification_id,
         file_hash=file_hash
     )
@@ -84,13 +97,24 @@ async def upload_pdf(
     db.commit()
     db.refresh(new_document)
 
+    create_audit_log(
+        db=db,
+        document_id=new_document.id,
+        user_id=current_user.id,
+        action="PDF_UPLOADED",
+        message=f"PDF uploaded: {new_document.original_filename}"
+    )
+
+    db.commit()
+
     return new_document
+
 
 @router.get(
     "",
     response_model=list[DocumentResponse]
 )
-def get_my_documents(
+def get_documents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -100,11 +124,12 @@ def get_my_documents(
 
     return documents
 
+
 @router.get(
     "/{document_id}",
     response_model=DocumentResponse
 )
-def get_single_document(
+def get_document(
     document_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -151,6 +176,7 @@ def get_document_file(
         media_type="application/pdf",
         filename=document.original_filename
     )
+
 
 @router.delete(
     "/{document_id}",
