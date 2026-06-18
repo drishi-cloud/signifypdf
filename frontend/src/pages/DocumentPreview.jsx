@@ -12,8 +12,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 const API_BASE_URL = "http://127.0.0.1:8000"
 
-const SIGNATURE_WIDTH = 0.25
-const SIGNATURE_HEIGHT = 0.08
+const TYPED_SIGNATURE_WIDTH = 0.25
+const TYPED_SIGNATURE_HEIGHT = 0.08
+
+const IMAGE_SIGNATURE_WIDTH = 0.18
+const IMAGE_SIGNATURE_HEIGHT = 0.045
 
 const MIN_SIGNATURE_IMAGE_SIZE = 1024
 const MAX_SIGNATURE_IMAGE_SIZE = 2 * 1024 * 1024
@@ -524,6 +527,20 @@ function DocumentPreview() {
     }
   }
 
+  function getSignatureBoxSize(content) {
+    if (content && content.type === "image") {
+      return {
+        width: IMAGE_SIGNATURE_WIDTH,
+        height: IMAGE_SIGNATURE_HEIGHT
+      }
+    }
+
+    return {
+      width: TYPED_SIGNATURE_WIDTH,
+      height: TYPED_SIGNATURE_HEIGHT
+    }
+  }
+
   function getCleanSignatureText() {
     const cleanText = signatureText.trim()
 
@@ -610,10 +627,12 @@ function DocumentPreview() {
       return
     }
 
+    const signatureSize = getSignatureBoxSize(content)
+
     setDragItem({
       type: "new",
-      width: SIGNATURE_WIDTH,
-      height: SIGNATURE_HEIGHT,
+      width: signatureSize.width,
+      height: signatureSize.height,
       content
     })
 
@@ -1162,7 +1181,7 @@ function DocumentPreview() {
     <main className="min-h-screen bg-slate-100">
       {dragPreview && (
         <div
-          className="fixed z-50 pointer-events-none text-slate-800 min-w-36 min-h-14 flex items-center justify-center rounded-md border border-dashed border-slate-400 p-2 shadow-lg"
+          className="fixed z-50 pointer-events-none text-slate-800 w-40 h-14 flex items-center justify-center rounded-md border border-dashed border-slate-400 p-2 shadow-lg"
           style={{
             left: dragPreview.x,
             top: dragPreview.y,
@@ -1516,7 +1535,7 @@ function DocumentPreview() {
                           event.stopPropagation()
                           deleteSignature(signature.id)
                         }}
-                        className="absolute -top-4 -right-4 bg-red-600 text-white rounded-full w-8 h-8 text-sm flex items-center justify-center opacity-100 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
+                        className="absolute -top-4 -right-4 bg-red-600 text-white rounded-full w-8 h-8 text-sm flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg transition-opacity"
                       >
                         {deletingSignatureId === signature.id ? "..." : "×"}
                       </button>

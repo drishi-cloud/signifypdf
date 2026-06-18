@@ -197,22 +197,37 @@ def finalize_signed_pdf(
                 text_color = convert_hex_to_rgb(signature_content.color)
                 pdf_font = get_pdf_font_name(signature_content.font)
 
-                font_size = signature_rect.height * 0.45
+                font_size_by_height = signature_rect.height * 0.26
+                font_size_by_width = signature_rect.width / max(len(text_value) * 0.55, 1)
 
-                if font_size < 10:
-                    font_size = 10
-
-                if font_size > 32:
-                    font_size = 32
-
-                page.insert_textbox(
-                    signature_rect,
-                    text_value,
-                    fontsize=font_size,
-                    fontname=pdf_font,
-                    color=text_color,
-                    align=fitz.TEXT_ALIGN_CENTER
+                font_size = min(
+                    font_size_by_height,
+                    font_size_by_width,
+                    14
                 )
+
+                if font_size < 7:
+                    font_size = 7
+
+                try:
+                    page.insert_textbox(
+                        signature_rect,
+                        text_value,
+                        fontsize=font_size,
+                        fontname=pdf_font,
+                        color=text_color,
+                        align=fitz.TEXT_ALIGN_CENTER,
+                        fill_opacity=0.75
+                    )
+                except TypeError:
+                    page.insert_textbox(
+                        signature_rect,
+                        text_value,
+                        fontsize=font_size,
+                        fontname=pdf_font,
+                        color=text_color,
+                        align=fitz.TEXT_ALIGN_CENTER
+                    )
 
             elif signature_content.type == "image":
                 image_bytes = extract_base64_image(signature_content.value)
