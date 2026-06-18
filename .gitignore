@@ -18,3 +18,11 @@ backend/uploads/
 # VS Code optional
 .vscode/
 backend/*.db
+
+backend/.env
+backend/venv/
+backend/__pycache__/
+backend/signifypdf.db
+backend/uploads/
+backend/signed/
+frontend/node_modules/
