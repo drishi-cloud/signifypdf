@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
 
-const API_BASE_URL = "http://127.0.0.1:8000"
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
 
 function Verify() {
   const [verificationId, setVerificationId] = useState("")
