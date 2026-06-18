@@ -232,3 +232,11 @@ The `.env` file contains private credentials and should not be pushed to GitHub.
 ## Project Status
 
 This project is created as an internship/final-year level PDF signing and verification system using a Python-based backend and React frontend.
+
+## Live Demo
+
+Frontend Live URL: https://signifypdf-frontend.vercel.app/
+
+Backend API URL: https://signifypdf-backend.onrender.com
+
+Swagger API Docs: https://signifypdf-backend.onrender.com/docs
